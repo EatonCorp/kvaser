@@ -18,14 +18,17 @@
 #if LINUX
 #   include <linux/poll.h>
 #   include <asm/atomic.h>
+#   include <linux/types.h>
 #else // WIN32
 #   include "windows.h"
 
 typedef struct _USBCAN_CONTEXT USBCAN_CONTEXT;
+typedef unsigned long uint32_t;
 #endif
 
 #include "canIfData.h"
 #include "vcanevt.h"
+#include "objbuf.h"
 
 #include "osif_common.h"
 #include "osif_kernel.h"
@@ -78,7 +81,13 @@ typedef struct _USBCAN_CONTEXT USBCAN_CONTEXT;
 #if LINUX
 #define ArgPtrIn(s)
 #define ArgPtrOut(s)
-#define ArgIntIn
+#define ArgIntIn     do {                                   \
+                       int argh;                            \
+                       get_user_int_ret(&argh, (int *)arg,  \
+                                        -EFAULT);           \
+                       arg = argh;                          \
+                     } while (0)
+
 #else
 #define ArgPtrIn(s)  do { if (pBufIn && (dwLenIn >= s)) {   \
                             arg = (long)pBufIn;             \
@@ -93,9 +102,9 @@ typedef struct _USBCAN_CONTEXT USBCAN_CONTEXT;
                             return -EINVAL;                 \
                           }                                 \
                         } while(0)
-#if 0
-#define ArgIntIn     do { if (pBufIn && (dwLenIn == 4)) {   \
-                            get_user_long_ret(&arg, (long *)pBufIn, -EFAULT); \
+#if 1
+#define ArgIntIn     do { if (pBufIn && (dwLenIn == sizeof(int))) {   \
+                            get_user_int_ret(&arg, (int *)pBufIn, -EFAULT); \
                           } else {                          \
                             return -EFAULT;                 \
                           }                                 \
@@ -107,16 +116,20 @@ typedef struct _USBCAN_CONTEXT USBCAN_CONTEXT;
 
 
 #define VCAN_STAT_OK                 0
-#define VCAN_STAT_FAIL              -1
-#define VCAN_STAT_TIMEOUT           -2
-
+#define VCAN_STAT_FAIL              -1    // -EIO
+#define VCAN_STAT_TIMEOUT           -2    // -EAGAIN (TIMEDOUT)?
+#define VCAN_STAT_NO_DEVICE         -3    // -ENODEV
+#define VCAN_STAT_NO_RESOURCES      -4    // -EAGAIN
+#define VCAN_STAT_NO_MEMORY         -5    // -ENOMEM
+#define VCAN_STAT_SIGNALED          -6    // -ERESTARTSYS
+#define VCAN_STAT_BAD_PARAMETER     -7    // -EINVAL
 
 /*****************************************************************************/
 /*  Data structures                                                          */
 /*****************************************************************************/
 
 typedef union {
-    unsigned long L;
+    uint32_t L;
     struct { unsigned short w0, w1; } W;
     struct { unsigned char b0, b1, b2, b3; } B;
 } WL;
@@ -134,9 +147,9 @@ typedef struct VCanChanData
     int                      minorNr;
     unsigned char            channel;
     unsigned char            chipType;
-    unsigned char            ean[6];      // QQQ GB: I believe this should be 8 chars or two 32-bit int
-    unsigned long            serialHigh;
-    unsigned long            serialLow;
+    unsigned char            ean[8];
+    uint32_t                 serialHigh;
+    uint32_t                 serialLow;
 
     /* Status */
     unsigned char            isOnBus;
@@ -144,13 +157,11 @@ typedef struct VCanChanData
     unsigned char            lineMode;    // TRANSCEIVER_LINEMODE_xxx
     unsigned char            resNet;      // TRANSCEIVER_RESNET_xxx
     atomic_t                 transId;
-#if WIN32
-    unsigned char            chanId;
-#endif
+    atomic_t                 chanId;
     unsigned int             overrun;
     CanChipState             chipState;
     unsigned int             errorCount;
-    unsigned long            errorTime;
+    uint32_t                 errorTime;
     unsigned char            rxErrorCounter;
     unsigned char            txErrorCounter;
 
@@ -168,25 +179,40 @@ typedef struct VCanChanData
 
     OS_IF_LOCK              openLock;
     void                   *hwChanData;
+#if 0
     atomic_t                waitEmpty;
+#else
+    OS_IF_ATOMIC_BIT        waitEmpty;
+#endif
 
     struct VCanCardData    *vCard;
 } VCanChanData;
 
 
+// For VCanCardData->card_flags
+#define DEVHND_CARD_FIRMWARE_BETA       0x01  // Firmware is beta
+#define DEVHND_CARD_FIRMWARE_RC         0x02  // Firmware is release candidate
+#define DEVHND_CARD_AUTO_RESP_OBJBUFS   0x04  // Firmware supports auto-response object buffers
+#define DEVHND_CARD_REFUSE_TO_RUN       0x08  // Major problem detected
+#define DEVHND_CARD_REFUSE_TO_USE_CAN   0x10  // Major problem detected
+#define DEVHND_CARD_AUTO_TX_OBJBUFS     0x20  // Firmware supports periodic transmit object buffers
+
 /*  Cards specific data */
 typedef struct VCanCardData
 {
+    uint32_t                hw_type;
+    uint32_t                card_flags;
+    uint32_t                capabilities;   // qqq This should be per channel!
     unsigned int            nrChannels;
-    unsigned long           serialNumber;
-    unsigned char           ean[6];            // QQQ GB: I believe this should be 8 chars or two 32-bit int
+    uint32_t                serialNumber;
+    unsigned char           ean[8];
     unsigned int            firmwareVersionMajor;
     unsigned int            firmwareVersionMinor;
     unsigned int            firmwareVersionBuild;
 
-    unsigned long           timeHi;
-    unsigned long           timeOrigin;
-    unsigned long           usPerTick;
+    uint32_t                timeHi;
+    uint32_t                timeOrigin;
+    uint32_t                usPerTick;
 
     /* Ports and addresses */
     unsigned char           cardPresent;
@@ -207,17 +233,27 @@ typedef struct VCanDriverData
     char                   *deviceName;
 } VCanDriverData;
 
+typedef struct
+{
+    int                     bufHead;
+    int                     bufTail;
+#if DEBUG
+    int                     lastEmpty;
+    int                     lastNotEmpty;
+#endif
+    VCAN_EVENT              fileRcvBuffer[FILE_RCV_BUF_SIZE];
+    int                     size;
+    OS_IF_WAITQUEUE_HEAD    rxWaitQ;
+#if !LINUX
+    OS_IF_LOCK              lock;
+#endif
+} VCanReceiveData;
+
 /* File pointer specific data */
 typedef struct VCanOpenFileNode {
-    int                     rcvBufHead;
-    int                     rcvBufTail;
-    VCAN_EVENT              fileRcvBuffer[FILE_RCV_BUF_SIZE];
-#if LINUX
+    OS_IF_SEMAPHORE         ioctl_mutex;
+    VCanReceiveData         rcv;
     unsigned char           transId;
-#else
-    unsigned char           chanId;
-#endif
-    OS_IF_WAITQUEUE_HEAD    rxWaitQ;
 #if LINUX
     struct file            *filp;
 #else
@@ -235,7 +271,11 @@ typedef struct VCanOpenFileNode {
     long                    writeTimeout;
     long                    readTimeout;
     VCanMsgFilter           filter;
-    unsigned long           overruns;
+    OS_IF_TASK_QUEUE_HANDLE objbufWork;
+    OS_IF_WQUEUE            *objbufTaskQ;
+    OBJECT_BUFFER           *objbuf;
+    uint32_t                objbufActive;
+    uint32_t                overruns;
     struct VCanOpenFileNode *next;
 } VCanOpenFileNode;
 
@@ -250,7 +290,9 @@ typedef struct VCanHWInterface {
     int (*busOn)                (VCanChanData *chd);
     int (*busOff)               (VCanChanData *chd);
     int (*txAvailable)          (VCanChanData *chd);
+#if 0
     int (*transmitMessage)      (VCanChanData *chd, CAN_MSG *m);
+#endif
     int (*procRead)             (char *buf, char **start, OS_IF_OFFSET offset,
                                  int count, int *eof, void *data);
     int (*closeAllDevices)      (void);
@@ -263,7 +305,39 @@ typedef struct VCanHWInterface {
     int (*requestChipState)     (VCanChanData*);
     int (*requestSend)          (VCanCardData*, VCanChanData*);
     unsigned int (*getVersion)  (int);
+    int (*objbufExists)         (VCanChanData *chd, int bufType, int bufNo);
+    int (*objbufFree)           (VCanChanData *chd, int bufType, int bufNo);
+    int (*objbufAlloc)          (VCanChanData *chd, int bufType, int *bufNo);
+    int (*objbufWrite)          (VCanChanData *chd, int bufType, int bufNo,
+                                 int id, int flags, int dlc, unsigned char *data);
+    int (*objbufEnable)         (VCanChanData *chd, int bufType, int bufNo,
+                                 int enable);
+    int (*objbufSetFilter)      (VCanChanData *chd, int bufType, int bufNo,
+                                 int code, int mask);
+    int (*objbufSetFlags)       (VCanChanData *chd, int bufType, int bufNo,
+                                 int flags);
+    int (*objbufSetPeriod)      (VCanChanData *chd, int bufType, int bufNo,
+                                 int period);
+    int (*objbufSetMsgCount)    (VCanChanData *chd, int bufType, int bufNo,
+                                 int count);
+    int (*objbufSendBurst)      (VCanChanData *chd, int bufType, int bufNo,
+                                 int burstLen);
 } VCanHWInterface;
+
+
+#define WAITNODE_DATA_SIZE 32 // 32 == MAX(MAX_CMD_LEN in filo_cmds.h and helios_cmds.h)
+typedef struct WaitNode {
+  struct list_head list;
+  OS_IF_SEMAPHORE  waitSemaphore;
+  void             *replyPtr;
+  unsigned char    cmdNr;
+  unsigned char    transId;
+  unsigned char    timedOut;
+#if !LINUX
+  char             data[WAITNODE_DATA_SIZE]; 
+#endif
+} WaitNode;
+
 
 
 
@@ -276,6 +350,11 @@ extern VCanCardData          *canCards;
 extern VCanHWInterface        hwIf;
 extern OS_IF_LOCK             canCardsLock;
 extern struct file_operations fops;
+
+#if !LINUX
+extern WaitNode waitNodes[];
+extern WaitNode *freeWaitNode;
+#endif
 
 
 

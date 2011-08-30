@@ -46,22 +46,26 @@
 // Kvaser definitions
 #include "vcanevt.h"
 #include "vcan_ioctl.h"
+#include "kcan_ioctl.h"
 #if LINUX
-#include "hwnames.h"
+#   include "hwnames.h"
 #endif
 #include "osif_functions_kernel.h"
+#if !LINUX
+#   include "osif_user.h"
+#endif
 #include "queue.h"
 #include "VCanOsIf.h"
 #include "debug.h"
 
 
 #if LINUX
-#   if LINUX_2_6
-        MODULE_LICENSE("GPL");
-#   else
-        MODULE_LICENSE("GPL");
-        EXPORT_NO_SYMBOLS;
-#   endif
+    MODULE_LICENSE("GPL");
+    MODULE_AUTHOR("KVASER");
+#endif
+
+#if LINUX && !LINUX_2_6
+    EXPORT_NO_SYMBOLS;
 #endif
 
 #if LINUX
@@ -106,30 +110,40 @@ VCanDriverData driverData;
 VCanCardData   *canCards = NULL;
 OS_IF_LOCK     canCardsLock;
 
+#if !LINUX
+WaitNode waitNodes[32];
+WaitNode *freeWaitNode;
+#define EVENT_HANDLE_MASK 0x12345678
+#endif
+
 //======================================================================
 // File operations...
 //======================================================================
 #if LINUX
 
 static int          vCanClose(struct inode *inode, struct file *filp);
+#if !defined(HAVE_UNLOCKED_IOCTL)
 static int          vCanIOCtl(struct inode *inode, struct file *filp,
                               unsigned int cmd, unsigned long arg);
+#endif
+static long         vCanIOCtl_unlocked(struct file *filp,
+                                       unsigned int cmd, unsigned long arg);
 static int          vCanOpen(struct inode *inode, struct file *filp);
 static unsigned int vCanPoll(struct file *filp, poll_table *wait);
 
 struct file_operations fops = {
-  .llseek         = NULL,
-  .read           = NULL,
-  .write          = NULL,
-  .readdir        = NULL,
-  .poll           = vCanPoll,
-  .unlocked_ioctl = vCanIOCtl,
-  .mmap           = NULL,
-  .open           = vCanOpen,
-  .flush          = NULL,
-  .release        = vCanClose,
-  .fsync          = NULL
-                    // Fills rest with NULL entries
+  .poll    = vCanPoll,
+  .open    = vCanOpen,
+  .release = vCanClose,
+#if defined(HAVE_UNLOCKED_IOCTL)
+  .unlocked_ioctl = vCanIOCtl_unlocked,
+#else
+  .ioctl   = vCanIOCtl,
+#endif
+#if defined(HAVE_COMPAT_IOCTL)
+  .compat_ioctl   = vCanIOCtl_unlocked,
+#endif
+             // Fills rest with NULL entries
 };
 #else
 #           pragma message("qqq")
@@ -174,6 +188,94 @@ int vCanFlushSendBuffer (VCanChanData *chd)
 }
 
 //======================================================================
+//  Discard recieve queue
+//======================================================================
+
+int vCanFlushReceiveBuffer (VCanOpenFileNode *fileNodePtr)
+{
+  fileNodePtr->rcv.bufTail = 0;
+  fileNodePtr->rcv.bufHead = 0;
+
+  return VCAN_STAT_OK;
+}
+
+//======================================================================
+//  Pop rx queue
+//======================================================================
+int vCanPopReceiveBuffer (VCanReceiveData *rcv)
+{
+  #if !LINUX
+  int isEmpty;
+  os_if_spin_lock(&rcv->lock);
+  #endif
+
+  if (rcv->bufTail >= rcv->size - 1) {
+    rcv->bufTail = 0;
+  }
+  else {
+    rcv->bufTail++;
+  }
+
+  if ((rcv->bufTail % 10) == 0) {
+    DEBUGPRINT(4, (TXT("RXpop(%d)\n"), rcv->bufTail));
+  }
+
+  #if !LINUX
+  isEmpty = rcv->bufTail == rcv->bufHead;
+
+  if (isEmpty) {
+    #if DEBUG
+    rcv->lastEmpty = rcv->bufTail;
+    #endif
+    os_if_clear_event(&rcv->rxWaitQ);
+  }
+  os_if_spin_unlock(&rcv->lock);
+  #endif
+
+  return VCAN_STAT_OK;
+}
+
+//======================================================================
+//  Push rx queue
+//======================================================================
+int vCanPushReceiveBuffer (VCanReceiveData *rcv)
+{
+  int wasEmpty;
+  #if !LINUX
+  os_if_spin_lock(&rcv->lock);
+  #endif
+
+  wasEmpty = rcv->bufTail == rcv->bufHead;
+  if (rcv->bufHead >= rcv->size - 1) {
+    rcv->bufHead = 0;
+  }
+  else {
+    rcv->bufHead++;
+  }
+
+  if ((rcv->bufHead % 10) == 0) {
+    DEBUGPRINT(4, (TXT("RXpush(%d)\n"), rcv->bufHead));
+  }
+
+  // Wake up if the queue was empty BEFORE
+  if (wasEmpty) {
+    #if LINUX
+    os_if_wake_up_interruptible(&rcv->rxWaitQ);
+    #else
+    os_if_mark_event(&rcv->rxWaitQ);
+    #if DEBUG
+    rcv->lastNotEmpty = rcv->bufHead;
+    #endif
+    #endif
+  }
+  #if !LINUX
+  os_if_spin_unlock(&rcv->lock);
+  #endif
+
+  return VCAN_STAT_OK;
+}
+
+//======================================================================
 //  Deliver to receive queue
 //======================================================================
 
@@ -182,6 +284,7 @@ int vCanDispatchEvent (VCanChanData *chd, VCAN_EVENT *e)
   VCanOpenFileNode *fileNodePtr;
   int rcvQLen;
   unsigned long irqFlags;
+  long objbuf_mask;
 
   // Update and notify readers
   // Needs to be _irqsave since some drivers call from ISR:s.
@@ -189,27 +292,25 @@ int vCanDispatchEvent (VCanChanData *chd, VCAN_EVENT *e)
   for (fileNodePtr = chd->openFileList; fileNodePtr != NULL;
        fileNodePtr = fileNodePtr->next) {
     // Event filter
-    if (!(e->tag & fileNodePtr->filter.eventMask))
+    if (!(e->tag & fileNodePtr->filter.eventMask)) {
       continue;
-    if (e->tag == V_RECEIVE_MSG && ((CAN_MSG *)e)->flags & VCAN_MSG_FLAG_TXACK) {
+    }
+    if (e->tag == V_RECEIVE_MSG && e->tagData.msg.flags & VCAN_MSG_FLAG_TXACK) {
       // Skip if we sent it ourselves and we don't want the ack
-#if LINUX
       if (e->transId == fileNodePtr->transId && !fileNodePtr->modeTx) {
-#else
-      if (e->chanId == fileNodePtr->chanId && !fileNodePtr->modeTx) {
-#endif
         DEBUGPRINT(2, (TXT("TXACK Skipped since we sent it ourselves and we don't want the ack!\n")));
         continue;
       }
+      if (e->transId != fileNodePtr->transId) {
+        // Other receivers (virtual bus extension) should not see the TXACK.
+        e->tagData.msg.flags &= ~VCAN_MSG_FLAG_TXACK;
+      }
     }
-    if (e->tag == V_TRANSMIT_MSG && ((CAN_MSG *)e)->flags & VCAN_MSG_FLAG_TXRQ) {
+    if (e->tag == V_RECEIVE_MSG && e->tagData.msg.flags & VCAN_MSG_FLAG_TXRQ) {
       // Receive only if we sent it and we want the tx request
-#if LINUX
-      if (e->transId != fileNodePtr->transId || !fileNodePtr->modeTxRq)
-#else
-      if (e->chanId != fileNodePtr->chanId || !fileNodePtr->modeTxRq)
-#endif
+      if (e->transId != fileNodePtr->transId || !fileNodePtr->modeTxRq) {
         continue;
+      }
     }
     // CAN filter
     if (e->tag == V_RECEIVE_MSG || e->tag == V_TRANSMIT_MSG) {
@@ -233,41 +334,60 @@ int vCanDispatchEvent (VCanChanData *chd, VCAN_EVENT *e)
       //      fileNodePtr->filter.flagsMask))
       //  continue;
 
-      if (e->tagData.msg.flags & VCAN_MSG_FLAG_OVERRUN)
+      if (e->tagData.msg.flags & VCAN_MSG_FLAG_OVERRUN) {
         fileNodePtr->overruns++;
+      }
+
+      //
+      // Check against the object buffers, if any.
+      //
+      if (!(e->tagData.msg.flags & (VCAN_MSG_FLAG_TXRQ | VCAN_MSG_FLAG_TXACK)) &&
+          ((objbuf_mask = objbuf_filter_match(fileNodePtr->objbuf,
+                                              e->tagData.msg.id,
+                                              e->tagData.msg.flags)) != 0)) {
+        // This is something that matched the code/mask for at least one buffer,
+        // and it's *not* a TXRQ or a TXACK.
+        atomic_set_mask(objbuf_mask, &fileNodePtr->objbufActive);
+        os_if_queue_task_not_default_queue(fileNodePtr->objbufTaskQ,
+                                           &fileNodePtr->objbufWork);
+      }
     }
-    rcvQLen = getQLen(fileNodePtr->rcvBufHead, fileNodePtr->rcvBufTail,
-                      FILE_RCV_BUF_SIZE);
-    if (rcvQLen >= FILE_RCV_BUF_SIZE - 1) {
+
+    rcvQLen = getQLen(fileNodePtr->rcv.bufHead, fileNodePtr->rcv.bufTail,
+                      fileNodePtr->rcv.size);
+    if (rcvQLen >= fileNodePtr->rcv.size - 1) {
       // The buffer is full, ignore new message
       fileNodePtr->overruns++;
       DEBUGPRINT(2, (TXT("File node overrun\n")));
       // Mark message that arrived before this one
       {
-        //int i = FILE_RCV_BUF_SIZE - 1, head = fileNodePtr->rcvBufHead;
         int i;
-        int head = fileNodePtr->rcvBufHead;
-        for (i = FILE_RCV_BUF_SIZE - 1; i; --i){
-          head = (head == 0 ? FILE_RCV_BUF_SIZE - 1 : head - 1);
-          if (fileNodePtr->fileRcvBuffer[head].tag == V_RECEIVE_MSG)
+        int head = fileNodePtr->rcv.bufHead;
+        for (i = fileNodePtr->rcv.size - 1; i; --i){
+          head = (head == 0 ? fileNodePtr->rcv.size - 1 : head - 1);
+          if (fileNodePtr->rcv.fileRcvBuffer[head].tag == V_RECEIVE_MSG)
             break;
         }
         if (i) {
-          fileNodePtr->fileRcvBuffer[head].tagData.msg.flags |= VCAN_MSG_FLAG_OVERRUN;
+          fileNodePtr->rcv.fileRcvBuffer[head].tagData.msg.flags |= VCAN_MSG_FLAG_OVERRUN;
         }
       }
 
     }
     // Insert into buffer
     else {
-      memcpy(&(fileNodePtr->fileRcvBuffer[fileNodePtr->rcvBufHead]),
+      memcpy(&(fileNodePtr->rcv.fileRcvBuffer[fileNodePtr->rcv.bufHead]),
              e, sizeof(VCAN_EVENT));
-      if (++fileNodePtr->rcvBufHead >= FILE_RCV_BUF_SIZE)
-        fileNodePtr->rcvBufHead = 0;
-      DEBUGPRINT(3, (TXT("Number of packets in receive queue: %d\n"), rcvQLen));
-      // Wake up if the queue was empty BEFORE
-      if (rcvQLen == 0) {
-        os_if_wake_up_interruptible(&fileNodePtr->rxWaitQ);
+      vCanPushReceiveBuffer(&fileNodePtr->rcv);
+#if 0
+      if ((rcvQLen % 10) == 0) {
+#else
+      {
+#endif
+        DEBUGPRINT(3, (TXT("Number of packets in receive queue: %ld\n"),
+                       getQLen(fileNodePtr->rcv.bufHead,
+                               fileNodePtr->rcv.bufTail,
+                               fileNodePtr->rcv.size)));
       }
     }
   }
@@ -290,9 +410,9 @@ VCanOpenFileNode* vCanOpen(USBCAN_CONTEXT *usbcan_context)
   VCanOpenFileNode *openFileNodePtr;
   VCanCardData *cardData = NULL;
   VCanChanData *chanData = NULL;
-  unsigned long irqFlags;
 
 #if LINUX
+  unsigned long irqFlags;
   int minorNr;
   int channelNr;
 
@@ -334,8 +454,9 @@ VCanOpenFileNode* vCanOpen(USBCAN_CONTEXT *usbcan_context)
 
   // Allocate memory and zero the whole struct
   openFileNodePtr = os_if_kernel_malloc(sizeof(VCanOpenFileNode));
-  if (openFileNodePtr == NULL)
+  if (openFileNodePtr == NULL) {
     return -ENOMEM;
+  }
   memset(openFileNodePtr, 0, sizeof(VCanOpenFileNode));
 #else
   os_if_spin_lock(&canCardsLock);
@@ -365,14 +486,39 @@ VCanOpenFileNode* vCanOpen(USBCAN_CONTEXT *usbcan_context)
 
   os_if_init_cond(&openFileNodePtr->inactive);
   os_if_set_cond(&openFileNodePtr->inactive);
+
+  os_if_spin_lock_init(&openFileNodePtr->rcv.lock);
 #endif
 
-  // Init wait queue
-  os_if_init_waitqueue_head(&(openFileNodePtr->rxWaitQ));
+  os_if_init_sema(&openFileNodePtr->ioctl_mutex);
+  os_if_up_sema(&openFileNodePtr->ioctl_mutex);
+
+  openFileNodePtr->rcv.size = sizeof(openFileNodePtr->rcv.fileRcvBuffer) / sizeof(openFileNodePtr->rcv.fileRcvBuffer[0]);
+
+#if LINUX
+    // Init wait queue
+  os_if_init_waitqueue_head(&(openFileNodePtr->rcv.rxWaitQ));
+#else
+    {
+      // Just to get a unique id for the fileNodePtr to be able to create a shared event between driver and canlib
+      DWORD unique_identifier = (DWORD)(&(openFileNodePtr->rcv.rxWaitQ)) ^ EVENT_HANDLE_MASK;
+      char eventName[DEVICE_NAME_LEN];
+
+      snprintf(eventName, DEVICE_NAME_LEN, "CAN_Event_%x", unique_identifier);
+      DEBUGOUT(ZONE_CAN_IOCTL, (TXT("CreateEvent(%S)\n"), eventName));
+
+      // Init named wait queue
+      os_if_init_named_waitqueue_head(&(openFileNodePtr->rcv.rxWaitQ), eventName);
+      if (NULL == openFileNodePtr->rcv.rxWaitQ) {
+        DEBUGOUT(ZONE_CAN_IOCTL, (TXT("os_if_init_named_waitqueue_head failed(%S)\n"), eventName));
+        SetLastError(ENOMEM);
+        return 0;
+      }
+    }
+#endif
 
 
-  openFileNodePtr->rcvBufTail         = 0;
-  openFileNodePtr->rcvBufHead         = 0;
+  vCanFlushReceiveBuffer(openFileNodePtr);
 #if LINUX
   openFileNodePtr->filp               = filp;
 #else
@@ -385,9 +531,9 @@ VCanOpenFileNode* vCanOpen(USBCAN_CONTEXT *usbcan_context)
   openFileNodePtr->modeTxRq           = 0;
   openFileNodePtr->writeTimeout       = -1;
   openFileNodePtr->readTimeout        = -1;
-#if LINUX    // qqq Only LINUX?
-  openFileNodePtr->transId            = atomic_read(&chanData->transId);
-  atomic_add(1, &chanData->transId);
+#if LINUX    // WinCE does this later   qqq transId should be larger to avoid possible repetition!!!!
+  openFileNodePtr->transId             = atomic_read(&chanData->chanId);
+  atomic_add(1, &chanData->chanId);
 #endif
   openFileNodePtr->filter.eventMask   = ~0;
   openFileNodePtr->overruns           = 0;
@@ -407,14 +553,16 @@ VCanOpenFileNode* vCanOpen(USBCAN_CONTEXT *usbcan_context)
   filp->private_data = openFileNodePtr;
 
   // Dummy for 2.6
-  OS_IF_MODE_INC_USE_COUNT;
+  OS_IF_MOD_INC_USE_COUNT;
 
+# if !LINUX_2_6
   // qqq should this be called?
   /*
   if (!try_module_get(THIS_MODULE)) {
     DEBUGPRINT(1, (TXT("try_module_get failed...")));
     return NULL;
   }*/
+# endif
 
   return 0;
 #else
@@ -460,12 +608,12 @@ int vCanClose (VCanOpenFileNode *fileNodePtr)
     openPtrPtr = &chanData->openFileList;
     for(; *openPtrPtr != NULL; openPtrPtr = &((*openPtrPtr)->next)) {
 #if LINUX
-      if ((*openPtrPtr)->filp == filp)
-        break;
+      if ((*openPtrPtr)->filp == filp) {
 #else
-      if ((*openPtrPtr)->usbcan_context == fileNodePtr->usbcan_context)
-        break;
+      if ((*openPtrPtr)->usbcan_context == fileNodePtr->usbcan_context) {
 #endif
+        break;
+      }
     }
     // We did not find anything?
     if (*openPtrPtr == NULL) {
@@ -477,6 +625,12 @@ int vCanClose (VCanOpenFileNode *fileNodePtr)
 #endif
     }
     // openPtrPtr now points to the next-pointer that points to the correct node
+#if 1
+    if (fileNodePtr != *openPtrPtr) {
+      DEBUGPRINT(1, (TXT("VCanClose - not same fileNodePtr: %p vs %p\n"),
+                     fileNodePtr, *openPtrPtr));
+    }
+#endif
     fileNodePtr = *openPtrPtr;
 
 #if 0
@@ -489,6 +643,22 @@ int vCanClose (VCanOpenFileNode *fileNodePtr)
     if (fileNodePtr->chanNr != -1 ) {
       if (atomic_dec_and_test(&chanData->fileOpenCount) == 0) {
         hwIf.busOff(chanData);
+        if (fileNodePtr->objbuf) {
+          // Driver-implemented auto response buffers.
+          objbuf_shutdown(fileNodePtr);
+          os_if_kernel_free(fileNodePtr->objbuf);
+          DEBUGPRINT(2, (TXT("Driver objbuf handling shut down.\n")));
+        }
+        if (hwIf.objbufFree) {
+          if (chanData->vCard->card_flags & DEVHND_CARD_AUTO_RESP_OBJBUFS) {
+            // Firmware-implemented auto response buffers
+            hwIf.objbufFree(chanData, OBJBUF_TYPE_AUTO_RESPONSE, -1);
+          }
+          if (chanData->vCard->card_flags & DEVHND_CARD_AUTO_TX_OBJBUFS) {
+            // Firmware-implemented periodic transmit buffers
+            hwIf.objbufFree(chanData, OBJBUF_TYPE_PERIODIC_TX, -1);
+          }
+        }
       }
 #endif
       fileNodePtr->chanNr = -1;
@@ -506,8 +676,34 @@ int vCanClose (VCanOpenFileNode *fileNodePtr)
 #endif
 
 #if !LINUX
-  os_if_delete_waitqueue_head(&fileNodePtr->rxWaitQ);
+  os_if_delete_waitqueue_head(&fileNodePtr->rcv.rxWaitQ);
   os_if_delete_cond(&fileNodePtr->inactive);
+  os_if_spin_lock_remove(&fileNodePtr->rcv.lock);
+#endif
+
+  os_if_delete_sema(&fileNodePtr->ioctl_mutex);
+  
+  // Should this be here or up?
+#if LINUX
+  if (!atomic_read(&chanData->fileOpenCount)) {
+    hwIf.busOff(chanData);
+    if (fileNodePtr->objbuf) {
+      // Driver-implemented auto response buffers.
+      objbuf_shutdown(fileNodePtr);
+      os_if_kernel_free(fileNodePtr->objbuf);
+      DEBUGPRINT(2, (TXT("Driver objbuf handling shut down.\n")));
+    }
+    if (hwIf.objbufFree) {
+      if (chanData->vCard->card_flags & DEVHND_CARD_AUTO_RESP_OBJBUFS) {
+        // Firmware-implemented auto response buffers
+        hwIf.objbufFree(chanData, OBJBUF_TYPE_AUTO_RESPONSE, -1);
+      }
+      if (chanData->vCard->card_flags & DEVHND_CARD_AUTO_TX_OBJBUFS) {
+        // Firmware-implemented periodic transmit buffers
+        hwIf.objbufFree(chanData, OBJBUF_TYPE_PERIODIC_TX, -1);
+      }
+    }
+  }
 #endif
 
   if (fileNodePtr != NULL) {
@@ -515,19 +711,15 @@ int vCanClose (VCanOpenFileNode *fileNodePtr)
     fileNodePtr = NULL;
   }
 
-  // Should this be here or up?
-#if LINUX
-  if (!atomic_read(&chanData->fileOpenCount)) {
-    hwIf.busOff(chanData);
-  }
-#endif
-
 #if LINUX
   // Dummy for 2.6
-  OS_IF_MODE_DEC_USE_COUNT;
+  OS_IF_MOD_DEC_USE_COUNT;
 
-  // qqq should this be called?
+# if !LINUX_2_6
+  // qqq Should this be called?
   //module_put(THIS_MODULE);
+# endif
+
   DEBUGPRINT(2, (TXT("VCanClose minor %d major (%d)\n"),
                  chanData->minorNr, MAJOR(inode->i_rdev)));
 #endif
@@ -564,20 +756,45 @@ int txQEmpty (VCanChanData *chd)
 
 int rxQEmpty (VCanOpenFileNode *fileNodePtr)
 {
-  return (getQLen(fileNodePtr->rcvBufHead, fileNodePtr->rcvBufTail,
-                  FILE_RCV_BUF_SIZE) == 0);
+  return (getQLen(fileNodePtr->rcv.bufHead, fileNodePtr->rcv.bufTail,
+                  fileNodePtr->rcv.size) == 0);
 }
 
 
 //======================================================================
 //  IOCtl - File operation
-//  This function is not reentrant with the same file descriptor!
 //======================================================================
 
 #if LINUX
+static int ioctl(VCanOpenFileNode *fileNodePtr,
+                 unsigned int ioctl_cmd, unsigned long arg);
+
+#if !defined(HAVE_UNLOCKED_IOCTL)
 int vCanIOCtl (struct inode *inode, struct file *filp,
                unsigned int ioctl_cmd, unsigned long arg)
+{
+  VCanOpenFileNode  *fileNodePtr = filp->private_data;
+
+#if defined(HAVE_UNLOCKED_IOCTL)
+  DEBUGPRINT(2, (TXT("Why am I using standard ioctl()?\n")));
+#endif
+
+  return ioctl(fileNodePtr, ioctl_cmd, arg);
+}
 #else
+
+long vCanIOCtl_unlocked (struct file *filp,
+                         unsigned int ioctl_cmd, unsigned long arg)
+{
+  VCanOpenFileNode  *fileNodePtr = filp->private_data;
+  int               ret;
+#endif
+
+#else
+static int ioctl(VCanOpenFileNode *fileNodePtr, unsigned int ioctl_cmd,
+                 PBYTE pBufIn, DWORD dwLenIn,
+                 PBYTE pBufOut, DWORD dwLenOut, PDWORD pdwActualOut);
+
 int empty_eq(void *par)
 {
   VCanChanData *chd = (VCanChanData *)par;
@@ -588,11 +805,54 @@ int empty_eq(void *par)
 int vCanIOCtl (VCanOpenFileNode *fileNodePtr,
                DWORD ioctl_cmd, PBYTE pBufIn, DWORD dwLenIn,
                PBYTE pBufOut, DWORD dwLenOut, PDWORD pdwActualOut)
-#endif
 {
+  int               ret;
+
+  if (!pdwActualOut) {
+    return -EINVAL;
+  } else {
+    *pdwActualOut = 0;   // Assume no output
+  }
+
+  // Only allow open channel and a couple of information request
+  // functions when channel is not already opened (via ioctl).
+  if (!fileNodePtr->channelOpen &&
+      (ioctl_cmd != VCAN_IOC_OPEN_TRANSP)      &&
+      (ioctl_cmd != VCAN_IOC_OPEN_CHAN)        &&
+      (ioctl_cmd != VCAN_IOC_OPEN_EXCL)        &&
+      (ioctl_cmd != VCAN_IOC_GET_NRCHANNELS)   &&
+      (ioctl_cmd != VCAN_IOC_GET_SERIAL)       &&
+      (ioctl_cmd != VCAN_IOC_GET_FIRMWARE_REV) &&
+      (ioctl_cmd != VCAN_IOC_GET_EAN)          &&
+      (ioctl_cmd != VCAN_IOC_GET_CARD_TYPE)
+     ) {
+    return -EINVAL;
+  }
+#endif
+
+  // Use semaphore to enforce mutual exclusion
+  // for a specific file descriptor.
+  os_if_down_sema(&fileNodePtr->ioctl_mutex);
+  ret = ioctl(fileNodePtr, ioctl_cmd,
 #if LINUX
-  VCanOpenFileNode  *fileNodePtr;
+              arg);
 #else
+              pBufIn, dwLenIn, pBufOut, dwLenOut, pdwActualOut);
+#endif
+  os_if_up_sema(&fileNodePtr->ioctl_mutex);
+
+  return ret;
+}
+
+
+static int ioctl (VCanOpenFileNode *fileNodePtr,
+#if LINUX
+                  unsigned int ioctl_cmd, unsigned long arg)
+{
+#else
+                  DWORD ioctl_cmd, PBYTE pBufIn, DWORD dwLenIn,
+                  PBYTE pBufOut, DWORD dwLenOut, PDWORD pdwActualOut)
+{
   DWORD             arg;
 #endif
   VCanChanData      *chd;
@@ -600,34 +860,12 @@ int vCanIOCtl (VCanOpenFileNode *fileNodePtr,
   unsigned long     timeout;
   OS_IF_WAITQUEUE   wait;
   int               ret;
-  int               vStat;
+  int               vStat = VCAN_STAT_OK;
   int               chanNr;
   unsigned long     irqFlags;
-
-#if LINUX
-  fileNodePtr = filp->private_data;
-#else
-  if (!pdwActualOut) {
-    return -EINVAL;
-  } else {
-    *pdwActualOut = 0;   // Assume no output
-  }
-#endif
+  int               tmp;
 
   chd = fileNodePtr->chanData;
-
-#if !LINUX
-  // Only allow open channel and get number of channels
-  // when channel is not already opened (via ioctl)
-  if (!fileNodePtr->channelOpen &&
-      (ioctl_cmd != VCAN_IOC_OPEN_TRANSP) &&
-      (ioctl_cmd != VCAN_IOC_OPEN_CHAN)   &&
-      (ioctl_cmd != VCAN_IOC_OPEN_EXCL)   &&
-      (ioctl_cmd != VCAN_IOC_GET_NRCHANNELS)) {
-    return -EINVAL;
-  }
-#endif
-
 
   switch (ioctl_cmd) {
   //------------------------------------------------------------------
@@ -641,14 +879,12 @@ int vCanIOCtl (VCanOpenFileNode *fileNodePtr,
       os_if_init_waitqueue_entry(&wait);
       queue_add_wait_for_space(&chd->txChanQueue, &wait);
 
-      while(1) {
+      while (1) {
         os_if_set_task_interruptible();
-        //os_if_spin_lock(&chd->sendQLock);  qqq Should this be used?
 
         if (txQFull(chd)) {
-          //os_if_spin_unlock(&chd->sendQLock);
           if (fileNodePtr->writeTimeout != -1) {
-            if (os_if_wait_for_event_timeout(1 + fileNodePtr->writeTimeout * HZ / 1000,
+            if (os_if_wait_for_event_timeout(fileNodePtr->writeTimeout,
                                              &wait) == 0) {
               // Transmit timed out
               queue_remove_wait_for_space(&chd->txChanQueue, &wait);
@@ -708,51 +944,56 @@ int vCanIOCtl (VCanOpenFileNode *fileNodePtr,
           memcpy(bufMsgPtr, &message, sizeof(CAN_MSG));
 
           // This is for keeping track of the originating fileNode
-#if LINUX
           bufMsgPtr->user_data = fileNodePtr->transId;
-#else
-          bufMsgPtr->user_data = fileNodePtr->chanId;
-#endif
           bufMsgPtr->flags &= ~(VCAN_MSG_FLAG_TX_NOTIFY | VCAN_MSG_FLAG_TX_START);
-          if (fileNodePtr->modeTx || (atomic_read(&chd->fileOpenCount) > 1))
+          if (fileNodePtr->modeTx || (atomic_read(&chd->fileOpenCount) > 1)) {
             bufMsgPtr->flags |= VCAN_MSG_FLAG_TX_NOTIFY;
-          if (fileNodePtr->modeTxRq)
+          }
+          if (fileNodePtr->modeTxRq) {
             bufMsgPtr->flags |= VCAN_MSG_FLAG_TX_START;
+          }
 
           queue_push(&chd->txChanQueue);
 
-          //os_if_spin_unlock(&chd->sendQLock);   qqq Should this be here?
           // Exit loop
           break;
         }
       }
-      hwIf.requestSend(chd->vCard, chd);
+      hwIf.requestSend(chd->vCard, chd); // Ok to fail ;-)
       break;
     //------------------------------------------------------------------
     case VCAN_IOC_RECVMSG:
      ArgPtrOut(sizeof(VCAN_EVENT));
-     if (!fileNodePtr->readIsBlock && rxQEmpty(fileNodePtr))
+     if (!fileNodePtr->readIsBlock && rxQEmpty(fileNodePtr)) {
+        DEBUGPRINT(3, (TXT("VCAN_IOC_RECVMSG - returning -EAGAIN, line = %d\n"),
+                       __LINE__));
+        DEBUGPRINT(3, (TXT("head = %d, tail = %d, size = %d, ")
+                       TXT2("readIsBlock = %d\n"),
+                       fileNodePtr->rcv.bufHead, fileNodePtr->rcv.bufTail,
+                       fileNodePtr->rcv.size, fileNodePtr->readIsBlock));
         return -EAGAIN;
+     }
 
       os_if_init_waitqueue_entry(&wait);
-      os_if_add_wait_queue(&fileNodePtr->rxWaitQ, &wait);
+      os_if_add_wait_queue(&fileNodePtr->rcv.rxWaitQ, &wait);
+#if LINUX
       while(1) {
         os_if_set_task_interruptible();
 
         if (rxQEmpty(fileNodePtr)) {
 
           if (fileNodePtr->readTimeout != -1) {
-            if (os_if_wait_for_event_timeout(1 + fileNodePtr->readTimeout * HZ / 1000,
+            if (os_if_wait_for_event_timeout(fileNodePtr->readTimeout,
                                              &wait) == 0) {
               // Receive timed out
-              os_if_remove_wait_queue(&fileNodePtr->rxWaitQ, &wait);
+              os_if_remove_wait_queue(&fileNodePtr->rcv.rxWaitQ, &wait);
               // Reset when finished
               return -EAGAIN;
             }
           }
           else {
 #if LINUX
-            os_if_wait_for_event(&fileNodePtr->rxWaitQ);
+            os_if_wait_for_event(&fileNodePtr->rcv.rxWaitQ);
 #else
             os_if_wait_for_event_timeout(INFINITE, &wait);
 #endif
@@ -760,13 +1001,17 @@ int vCanIOCtl (VCanOpenFileNode *fileNodePtr,
 #if LINUX
           if (signal_pending(current)) {
             // Sleep was interrupted by signal
-            os_if_remove_wait_queue(&fileNodePtr->rxWaitQ, &wait);
+            os_if_remove_wait_queue(&fileNodePtr->rcv.rxWaitQ, &wait);
+            DEBUGPRINT(4, (TXT("VCAN_IOC_RECVMSG - returning -ERESTARTSYS, "
+                               "line = %d\n"), __LINE__));
             return -ERESTARTSYS;
           }
 #else
           // Is the file being closed for some reason?
           if (!fileNodePtr->channelOpen) {
-            os_if_remove_wait_queue(&fileNodePtr->rxWaitQ, &wait);
+            os_if_remove_wait_queue(&fileNodePtr->rcv.rxWaitQ, &wait);
+            DEBUGPRINT(4, (TXT("VCAN_IOC_RECVMSG - returning -ERESTARTSYS, "
+                               "line = %d\n"), __LINE__));
             return -ERESTARTSYS;
           }
 #endif
@@ -774,25 +1019,70 @@ int vCanIOCtl (VCanOpenFileNode *fileNodePtr,
         // We have events in Q
         else {
           os_if_set_task_running();
-          os_if_remove_wait_queue(&fileNodePtr->rxWaitQ, &wait);
+          os_if_remove_wait_queue(&fileNodePtr->rcv.rxWaitQ, &wait);
           copy_to_user_ret((VCAN_EVENT *)arg,
-                           &(fileNodePtr->fileRcvBuffer[fileNodePtr->rcvBufTail]),
+                           &(fileNodePtr->rcv.fileRcvBuffer[fileNodePtr->rcv.bufTail]),
                            sizeof(VCAN_EVENT), -EFAULT);
-          if (++(fileNodePtr->rcvBufTail) >= FILE_RCV_BUF_SIZE) {
-            fileNodePtr->rcvBufTail = 0;
-          }
+          vCanPopReceiveBuffer(&fileNodePtr->rcv);
           // Exit loop
           break;
         }
       }
+#else // CE
+
+      if (fileNodePtr->readTimeout != -1) {
+        if (os_if_wait_for_event_timeout(fileNodePtr->readTimeout, &wait) == 0) {
+          // Receive timed out
+
+          //DEBUGPRINT(4, (TXT("VCAN_IOC_RECVMSG - returning -EAGAIN, "
+          //                   "line = %d\n"), __LINE__));
+          //DEBUGPRINT(0, (TXT("VCAN_IOC_RECVMSG: head = %d, tail = %d, "
+          //                   "empty = %d, notEmpty = %d\n"),
+          //               fileNodePtr->rcv.bufHead, fileNodePtr->rcv.bufTail,
+          //               fileNodePtr->rcv.lastEmpty,
+          //               fileNodePtr->rcv.lastNotEmpty));
+          if (fileNodePtr->rcv.bufHead == fileNodePtr->rcv.bufTail) {
+            // Reset when finished
+            os_if_remove_wait_queue(&fileNodePtr->rcv.rxWaitQ, &wait);
+            return -EAGAIN;
+          }
+          //DEBUGPRINT(0, (TXT("!!!!!!!!!!!!!!!!: head = %d, tail = %d, "
+          //                   "empty = %d, notEmpty = %d\n"),
+          //               fileNodePtr->rcv.bufHead, fileNodePtr->rcv.bufTail,
+          //               fileNodePtr->rcv.lastEmpty,
+          //               fileNodePtr->rcv.lastNotEmpty));
+        }
+      }
+      else {
+        os_if_wait_for_event_timeout(INFINITE, &wait);
+      }
+
+      // Is the file being closed for some reason?
+      if (!fileNodePtr->channelOpen) {
+        os_if_remove_wait_queue(&fileNodePtr->rcv.rxWaitQ, &wait);
+        DEBUGPRINT(4, (TXT("VCAN_IOC_RECVMSG - returning -ERESTARTSYS, ")
+                       TXT2("line = %d\n"),
+                       __LINE__));
+        return -ERESTARTSYS;
+      }
+
+      // We have events in Q
+      os_if_remove_wait_queue(&fileNodePtr->rcv.rxWaitQ, &wait);
+      copy_to_user_ret((VCAN_EVENT *)arg,
+                       &(fileNodePtr->rcv.fileRcvBuffer[fileNodePtr->rcv.bufTail]),
+                       sizeof(VCAN_EVENT), -EFAULT);
+      vCanPopReceiveBuffer(&fileNodePtr->rcv);
+
+#endif
       break;
     //------------------------------------------------------------------
     case VCAN_IOC_BUS_ON:
       DEBUGPRINT(3, (TXT("VCAN_IOC_BUS_ON\n")));
-      fileNodePtr->rcvBufHead = 0;
-      fileNodePtr->rcvBufTail = 0;
+      vCanFlushReceiveBuffer(fileNodePtr);
       vStat = hwIf.flushSendBuffer(chd);
-      vStat = hwIf.busOn(chd);
+      if (vStat == VCAN_STAT_OK) {
+        vStat = hwIf.busOn(chd);
+      }
       // Make synchronous? qqq
       break;
     //------------------------------------------------------------------
@@ -808,12 +1098,50 @@ int vCanIOCtl (VCanOpenFileNode *fileNodePtr,
         ArgPtrIn(sizeof(VCanBusParams));
         copy_from_user_ret(&busParams, (VCanBusParams *)arg,
                            sizeof(VCanBusParams), -EFAULT);
-        if (hwIf.setBusParams(chd, &busParams)) {
-
-          // Indicate that something went wrong by setting freq to 0
-          busParams.freq = 0;
+        vStat = hwIf.setBusParams(chd, &busParams);
+        if (vStat != VCAN_STAT_OK) {
+          DEBUGPRINT(4, (TXT("hwIf.setBusParams(...) = %d\n"), vStat));
         } else {
-          vStat = hwIf.getBusParams(chd, &busParams);
+          VCanBusParams busParamsSet;
+          vStat = hwIf.getBusParams(chd, &busParamsSet);
+          // Indicate that something went wrong by setting freq to 0
+          if (vStat == VCAN_STAT_BAD_PARAMETER) {
+            DEBUGPRINT(4, (TXT("Some bus parameter bad\n")));
+            busParams.freq = 0;
+          } else if (vStat != VCAN_STAT_OK) {
+            DEBUGPRINT(4, (TXT("hwIf.getBusParams(...) = %d\n"), vStat));
+          } else {
+            if (busParamsSet.freq != busParams.freq) {
+              DEBUGPRINT(2, (TXT("Bad freq: %ld vs %ld\n"),
+                             busParamsSet.freq, busParams.freq));
+              busParams.freq = 0;
+            }
+            if (busParams.freq > 1000000) {
+              DEBUGPRINT(2, (TXT("Too high freq: %ld\n"), busParams.freq));
+            }
+            if (busParamsSet.sjw != busParams.sjw) {
+              DEBUGPRINT(2, (TXT("Bad sjw: %d vs %d\n"),
+                             busParamsSet.sjw, busParams.sjw));
+              busParams.freq = 0;
+            }
+            if (busParamsSet.tseg1 != busParams.tseg1) {
+              DEBUGPRINT(2, (TXT("Bad tseg1: %d vs %d\n"),
+                             busParamsSet.tseg1, busParams.tseg1));
+              busParams.freq = 0;
+            }
+            if (busParamsSet.tseg2 != busParams.tseg2) {
+              DEBUGPRINT(2, (TXT("Bad tseg2: %d vs %d\n"),
+                             busParamsSet.tseg2, busParams.tseg2));
+              busParams.freq = 0;
+            }
+#if 0
+            if (!!busParamsSet.samp3 != !!busParams.samp3) {
+              DEBUGPRINT(2, (TXT("Bad samp3: %d vs %d\n"),
+                             busParamsSet.samp3, busParams.samp3));
+              busParams.freq = 0;
+            }
+#endif
+          }
         }
         ArgPtrOut(sizeof(VCanBusParams));
         copy_to_user_ret((VCanBusParams *)arg, &busParams,
@@ -849,6 +1177,16 @@ int vCanIOCtl (VCanOpenFileNode *fileNodePtr,
       break;
     //------------------------------------------------------------------
 #if LINUX
+    case VCAN_IOC_OPEN_TRANSP:
+      // This is really a NOP. Implemented to simplify CANlib.
+      os_if_get_int(&chanNr, (int *)arg);
+      ret = os_if_set_int(chanNr, (int *)arg);
+      if (ret) {
+        DEBUGPRINT(4, (TXT("VCAN_IOC_OPEN_TRANSP - returning -EFAULT\n")));
+        return -EFAULT;
+      }
+      break;
+    //------------------------------------------------------------------
     case VCAN_IOC_OPEN_CHAN:
       os_if_get_int(&chanNr, (int *)arg);
       os_if_spin_lock_irqsave(&chd->openLock, &irqFlags);
@@ -858,21 +1196,22 @@ int vCanIOCtl (VCanOpenFileNode *fileNodePtr,
              tmpFnp = tmpFnp->next) {
           /* */
         }
-        // This channel is locked (i.e opened exclusive)
-        if (tmpFnp) {
-          ret = os_if_set_int(-1, (int *)arg);
-#if 0
-          atomic_dec(&chd->fileOpenCount);
-#endif
-        } else {
-          ret = os_if_set_int(chanNr, (int *)arg);
+        // Was channel not locked (i.e. not opened exclusive) before?
+        if (!tmpFnp) {
           fileNodePtr->channelOpen = 1;
           fileNodePtr->chanNr = chanNr;
         }
+        os_if_spin_unlock_irqrestore(&chd->openLock, irqFlags);
+        if (tmpFnp) {
+          ret = os_if_set_int(-1, (int *)arg);
+        } else {
+          ret = os_if_set_int(chanNr, (int *)arg);
+        }
       }
-      os_if_spin_unlock_irqrestore(&chd->openLock, irqFlags);
-      if (ret)
+      if (ret) {
+        DEBUGPRINT(4, (TXT("VCAN_IOC_OPEN_CHAN - returning -EFAULT\n")));
         return -EFAULT;
+      }
       break;
     //------------------------------------------------------------------
     case VCAN_IOC_OPEN_EXCL:
@@ -885,58 +1224,39 @@ int vCanIOCtl (VCanOpenFileNode *fileNodePtr,
              tmpFnp = tmpFnp->next) {
           /* */
         }
-        // This channel is already opened
-        if (tmpFnp) {
-          ret = os_if_set_int(-1, (int *)arg);
-#if 0
-          atomic_dec(&chd->fileOpenCount);
-#endif
-        } else {
-          ret = os_if_set_int(chanNr, (int *)arg);
+        // Was channel not opened before?
+        if (!tmpFnp) {
           fileNodePtr->channelOpen = 1;
           fileNodePtr->channelLocked = 1;
           fileNodePtr->chanNr = chanNr;
         }
+        os_if_spin_unlock_irqrestore(&chd->openLock, irqFlags);
+        if (tmpFnp) {
+          ret = os_if_set_int(-1, (int *)arg);
+        } else {
+          ret = os_if_set_int(chanNr, (int *)arg);
+        }
       }
-      os_if_spin_unlock_irqrestore(&chd->openLock, irqFlags);
-      if (ret)
+      if (ret) {
+        DEBUGPRINT(4, (TXT("VCAN_IOC_OPEN_EXCL - returning -EFAULT\n")));
         return -EFAULT;
+      }
       break;
+
 #else
-#if !LINUX
-    case VCAN_IOC_GET_NRCHANNELS:
-      ArgPtrOut(sizeof(int));
-      put_user_ret(fileNodePtr->usbcan_context->vCard->nrChannels,
-                   (int *)arg, -EFAULT);
-      break;
     case VCAN_IOC_OPEN_TRANSP:
-#endif
     case VCAN_IOC_OPEN_CHAN:
     case VCAN_IOC_OPEN_EXCL:
       ArgPtrOut(sizeof(int));    // Check first to make sure
       ArgPtrIn(sizeof(int));
       get_user_int_ret(&chanNr, (int *)arg, -EFAULT);
 
-#if !LINUX
-#if 1
       if (fileNodePtr->channelOpen || (chanNr < 0) ||
-          ((unsigned int)chanNr >= fileNodePtr->usbcan_context->vCard->nrChannels)) {
+          ((unsigned int)chanNr >=
+           fileNodePtr->usbcan_context->vCard->nrChannels)) {
         return -EINVAL;
       }
       chd = fileNodePtr->usbcan_context->vCard->chanData[chanNr];
-#else
-      if (fileNodePtr->channelOpen ||
-          (chanNr < 0) || (chanNr >= fileNodePtr->chanData->vCard->nrChannels)) {
-        return -EINVAL;
-      }
-      chd = fileNodePtr->chanData->vCard->chanData[chanNr];
-#endif
-#else
-      if (fileNodePtr->channelOpen || (chanNr < 0) ||
-          ((unsigned int)chanNr >= chd->vCard->nrChannels)) {
-        return -EINVAL;
-      }
-#endif
 
       os_if_spin_lock_irqsave(&chd->openLock, &irqFlags);
       {
@@ -948,31 +1268,34 @@ int vCanIOCtl (VCanOpenFileNode *fileNodePtr,
           }
         }
         ArgPtrOut(sizeof(int));
-        if (tmpFnp) {   // Channel can't be (or already is) locked (opened exclusive)
-          ret = os_if_set_int(-1, (int *)arg);
-#if LINUX
- #if 0
-          atomic_dec(&chd->fileOpenCount);
- #endif
-#endif
-        } else {
-          ret = os_if_set_int(chanNr, (int *)arg);
+        // Was channel OK regarding exclusivity before?
+        if (!tmpFnp) {
           fileNodePtr->channelOpen   = (ioctl_cmd != VCAN_IOC_OPEN_TRANSP) ? 1 : 2;
           fileNodePtr->channelLocked = (ioctl_cmd == VCAN_IOC_OPEN_EXCL);
           fileNodePtr->chanNr = chanNr;
-#if !LINUX
-          fileNodePtr->chanId   = chd->chanId++;
+
+          // Linux does this earlier
+          // qqq transId should be larger to avoid possible repetition!
+          fileNodePtr->transId = atomic_read(&chd->chanId);
+          atomic_inc(&chd->chanId);
           fileNodePtr->chanData = chd;
           // Insert this node first in list of "opens"
           atomic_inc(&chd->fileOpenCount);
           fileNodePtr->next = chd->openFileList;
           chd->openFileList = fileNodePtr;
-#endif
+
+          os_if_spin_unlock_irqrestore(&chd->openLock, irqFlags);
+          if (tmpFnp) {
+            ret = os_if_set_int(-1, (int *)arg);
+          } else {
+            ret = os_if_set_int(chanNr, (int *)arg);
+          }
+        }
+        if (ret) {
+          DEBUGPRINT(4, (TXT("VCAN_IOC_OPEN_x - returning -EFAULT\n")));
+          return -EFAULT;
         }
       }
-      os_if_spin_unlock_irqrestore(&chd->openLock, irqFlags);
-      if (ret)
-        return -EFAULT;
       break;
 #endif
     //------------------------------------------------------------------
@@ -980,25 +1303,16 @@ int vCanIOCtl (VCanOpenFileNode *fileNodePtr,
       ArgPtrIn(sizeof(unsigned long));
       get_user_long_ret(&timeout, (unsigned long *)arg, -EFAULT);
       timeLeft = -1;
-      atomic_set(&chd->waitEmpty, 1);
+      set_bit(0, &chd->waitEmpty);   // qqq Think some more about this wait!
 
 #if LINUX
-#   if LINUX_2_6
-      timeLeft = wait_event_interruptible_timeout(chd->flushQ,
-          txQEmpty(chd) && hwIf.txAvailable(chd),
-          1 + timeout * HZ / 1000);
-#    else
       timeLeft = os_if_wait_event_interruptible_timeout(chd->flushQ,
-          txQEmpty(chd) && hwIf.txAvailable(chd),
-          1 + timeout * HZ / 1000);
-#    endif
+          txQEmpty(chd) && hwIf.txAvailable(chd), timeout);
 #else
-      timeLeft = os_if_wait_event_interruptible_timeout(chd->flushQ, empty_eq, chd,
-                                                        1 + timeout);
+      timeLeft = os_if_wait_event_interruptible_timeout(chd->flushQ, empty_eq,
+                                                        chd, timeout);
 #endif
-      if (atomic_read(&chd->waitEmpty)) {
-        atomic_set(&chd->waitEmpty, 0);
-      }
+      clear_bit(0, &chd->waitEmpty);   // qqq Think some more about this wait!
 
       if (timeLeft == OS_IF_TIMEOUT) {
         /*
@@ -1010,9 +1324,49 @@ int vCanIOCtl (VCanOpenFileNode *fileNodePtr,
       }
       break;
     //------------------------------------------------------------------
+#if !LINUX
+# define VCARD fileNodePtr->usbcan_context->vCard
+#else
+# define VCARD chd->vCard
+#endif
+    case VCAN_IOC_GET_NRCHANNELS:
+      ArgPtrOut(sizeof(int));
+      put_user_ret(VCARD->nrChannels, (int *)arg, -EFAULT);
+      break;
+    //------------------------------------------------------------------
+    case VCAN_IOC_GET_SERIAL:
+      ArgPtrOut(8);
+      put_user_ret(VCARD->serialNumber, (int *)arg, -EFAULT);
+      put_user_ret(0, ((int *)arg) + 1, -EFAULT);
+      break;
+    //------------------------------------------------------------------
+    case VCAN_IOC_GET_FIRMWARE_REV:
+      ArgPtrOut(8);
+      tmp = (VCARD->firmwareVersionMajor << 16) |
+             VCARD->firmwareVersionMinor;
+      put_user_ret(tmp, ((int *)arg) + 1, -EFAULT);
+      put_user_ret(VCARD->firmwareVersionBuild, ((int *)arg), -EFAULT);
+      break;
+    //------------------------------------------------------------------
+    case VCAN_IOC_GET_EAN:
+      ArgPtrOut(8);
+      put_user_ret(((int *)VCARD->ean)[0], (int *)arg, -EFAULT);
+      put_user_ret(((int *)VCARD->ean)[1], ((int *)arg) + 1, -EFAULT);
+      break;
+    //------------------------------------------------------------------
+    case VCAN_IOC_GET_CARD_TYPE:
+      ArgPtrOut(sizeof(int));
+      put_user_ret(VCARD->hw_type, (int *)arg, -EFAULT);
+      break;
+    //------------------------------------------------------------------
+    case VCAN_IOC_GET_CHAN_CAP:   // qqq This should be per channel!
+      ArgPtrOut(sizeof(int));
+      put_user_ret(VCARD->capabilities, (int *)arg, -EFAULT);
+      break;
+#undef VCARD
+    //------------------------------------------------------------------
     case VCAN_IOC_FLUSH_RCVBUFFER:
-      fileNodePtr->rcvBufHead = 0;
-      fileNodePtr->rcvBufTail = 0;
+      vCanFlushReceiveBuffer(fileNodePtr);
       break;
     //------------------------------------------------------------------
     case VCAN_IOC_FLUSH_SENDBUFFER:
@@ -1041,6 +1395,7 @@ int vCanIOCtl (VCanOpenFileNode *fileNodePtr,
     //------------------------------------------------------------------
     case VCAN_IOC_READ_TIMER:
       ArgPtrOut(sizeof(int));
+      // qqq Unable to distinguish error from time!
       put_user_ret(hwIf.getTime(chd->vCard), (int *)arg, -EFAULT);
       break;
     //------------------------------------------------------------------
@@ -1062,8 +1417,8 @@ int vCanIOCtl (VCanOpenFileNode *fileNodePtr,
     case VCAN_IOC_GET_RX_QUEUE_LEVEL:
       ArgPtrOut(sizeof(int));
       {
-        int ql = getQLen(fileNodePtr->rcvBufHead, fileNodePtr->rcvBufTail,
-                         FILE_RCV_BUF_SIZE) + hwIf.rxQLen(chd);
+        int ql = getQLen(fileNodePtr->rcv.bufHead, fileNodePtr->rcv.bufTail,
+                         fileNodePtr->rcv.size) + hwIf.rxQLen(chd);
         put_user_ret(ql, (int *)arg, -EFAULT);
       }
       break;
@@ -1106,6 +1461,32 @@ int vCanIOCtl (VCanOpenFileNode *fileNodePtr,
         }
       }
       break;
+    case VCAN_IOC_SET_TXRQ:
+      ArgPtrIn(sizeof(int));
+      {
+        DEBUGPRINT(3, (TXT("KVASER Try to set VCAN_IOC_SET_TXRQ to %d, was %d\n"),
+                       *(int *)arg, fileNodePtr->modeTx));
+        if (*(int *)arg >= 0 && *(int *)arg <= 2) {
+          fileNodePtr->modeTxRq = *(int *)arg;
+          DEBUGPRINT(3, (TXT("KVASER Managed to set VCAN_IOC_SET_TXRQ to %d\n"),
+                         fileNodePtr->modeTxRq));
+        }
+        else {
+          return -EFAULT;
+        }
+      }
+      break;
+#if !LINUX
+    case VCAN_IOC_GET_EVENTHANDLE:
+      ArgPtrOut(sizeof(DWORD));
+      {
+        // Just to get a unique id for the fileNodePtr to be able to create a shared event between driver and canlib
+        DWORD unique_identifier = (DWORD)(&(fileNodePtr->rcv.rxWaitQ)) ^ EVENT_HANDLE_MASK;
+
+        put_user_ret(unique_identifier, (DWORD *)arg, -EFAULT);
+      }
+      break;
+#endif
 #if LINUX
     // WARNING! IT IS NOT RECOMMENDED TO USE THIS IOCTL
     // (TEMP_IOCHARDRESET).
@@ -1125,37 +1506,485 @@ int vCanIOCtl (VCanOpenFileNode *fileNodePtr,
 #   endif
 #endif
 
+    case KCAN_IOCTL_OBJBUF_FREE_ALL:
+      if (fileNodePtr->objbuf) {
+        // Driver-implemented auto response buffers.
+        int i;
+        for (i = 0; i < MAX_OBJECT_BUFFERS; i++) {
+          fileNodePtr->objbuf[i].in_use = 0;
+        }
+      }
+      if (hwIf.objbufFree) {
+        if (chd->vCard->card_flags & DEVHND_CARD_AUTO_RESP_OBJBUFS) {
+          // Firmware-implemented auto response buffers
+          vStat = hwIf.objbufFree(chd, OBJBUF_TYPE_AUTO_RESPONSE, -1);
+        }
+        if (chd->vCard->card_flags & DEVHND_CARD_AUTO_TX_OBJBUFS) {
+          // Firmware-implemented periodic transmit buffers
+          vStat = hwIf.objbufFree(chd, OBJBUF_TYPE_PERIODIC_TX, -1);
+        }
+      }
+      break;
+
+    case KCAN_IOCTL_OBJBUF_ALLOCATE:
+      {
+        KCanObjbufAdminData io;
+        ArgPtrOut(sizeof(KCanObjbufAdminData));   // Check first, to make sure
+        ArgPtrIn(sizeof(KCanObjbufAdminData));
+        copy_from_user_ret(&io, (KCanObjbufAdminData *)arg,
+                           sizeof(KCanObjbufAdminData), -EFAULT);
+
+        DEBUGPRINT(2, (TXT("ObjBuf Allocate type=%d card_flags=0x%x\n"),
+                       io.type, chd->vCard->card_flags));
+        
+        vStat = VCAN_STAT_NO_RESOURCES;
+        if (io.type == OBJBUF_TYPE_AUTO_RESPONSE) {
+          if (chd->vCard->card_flags & DEVHND_CARD_AUTO_RESP_OBJBUFS) {
+            // Firmware-implemented auto response buffers
+            if (hwIf.objbufAlloc) {
+              vStat = hwIf.objbufAlloc(chd, OBJBUF_TYPE_AUTO_RESPONSE,
+                                       &io.buffer_number);
+            }
+          } else {
+            // Driver-implemented auto response buffers
+            int i;
+            if (!fileNodePtr->objbuf) {
+              fileNodePtr->objbuf = os_if_kernel_malloc(sizeof(OBJECT_BUFFER) *
+                                                        MAX_OBJECT_BUFFERS);
+              if (!fileNodePtr->objbuf) {
+                vStat = VCAN_STAT_NO_MEMORY;
+              } else {
+                memset(fileNodePtr->objbuf, 0,
+                       sizeof(OBJECT_BUFFER) * MAX_OBJECT_BUFFERS);
+                objbuf_init(fileNodePtr);
+              }
+            }
+            if (fileNodePtr->objbuf) {
+              vStat = VCAN_STAT_NO_MEMORY;
+              for (i = 0; i < MAX_OBJECT_BUFFERS; i++) {
+                if (!fileNodePtr->objbuf[i].in_use) {
+                  io.buffer_number              = i | OBJBUF_DRIVER_MARKER;
+                  fileNodePtr->objbuf[i].in_use = 1;
+                  vStat                         = VCAN_STAT_OK;
+                  break;
+                }
+              }
+            }
+          }
+        }
+        else if (io.type == OBJBUF_TYPE_PERIODIC_TX) {
+          if (chd->vCard->card_flags & DEVHND_CARD_AUTO_TX_OBJBUFS) {
+            // Firmware-implemented periodic transmit buffers
+            if (hwIf.objbufAlloc) {
+              vStat = hwIf.objbufAlloc(chd, OBJBUF_TYPE_PERIODIC_TX,
+                                       &io.buffer_number);
+            }
+          }
+        }
+
+        DEBUGPRINT(2, (TXT("ObjBuf Allocate got nr=%x stat=0x%x\n"),
+                       io.buffer_number, vStat));
+
+        ArgPtrOut(sizeof(KCanObjbufAdminData));
+        copy_to_user_ret((KCanObjbufAdminData *)arg, &io,
+                         sizeof(KCanObjbufAdminData), -EFAULT);
+      }
+      break;
+
+    case KCAN_IOCTL_OBJBUF_FREE:
+      {
+        KCanObjbufAdminData io;
+        ArgPtrIn(sizeof(KCanObjbufAdminData));
+        copy_from_user_ret(&io, (KCanObjbufAdminData *)arg,
+                           sizeof(KCanObjbufAdminData), -EFAULT);
+
+        DEBUGPRINT(2, (TXT("ObjBuf Free nr=%x card_flags=0x%x\n"),
+                       io.buffer_number, chd->vCard->card_flags));
+        
+        if (io.buffer_number & OBJBUF_DRIVER_MARKER) {
+          int buffer_number = io.buffer_number & OBJBUF_DRIVER_MASK;
+          if (fileNodePtr->objbuf && (buffer_number < MAX_OBJECT_BUFFERS)) {
+            fileNodePtr->objbuf[buffer_number].in_use = 0;
+          } else {
+            vStat = VCAN_STAT_BAD_PARAMETER;
+          }
+        } else if (hwIf.objbufExists && hwIf.objbufFree) {
+          if (hwIf.objbufExists(chd, OBJBUF_TYPE_AUTO_RESPONSE,
+                                io.buffer_number)) {
+            vStat = hwIf.objbufFree(chd, OBJBUF_TYPE_AUTO_RESPONSE,
+                                    io.buffer_number);
+          }
+          else if (hwIf.objbufExists(chd, OBJBUF_TYPE_PERIODIC_TX,
+                                     io.buffer_number)) {
+            vStat = hwIf.objbufFree(chd, OBJBUF_TYPE_PERIODIC_TX,
+                                    io.buffer_number);
+          } else {
+            vStat = VCAN_STAT_BAD_PARAMETER;
+          }
+        } else {
+          vStat = VCAN_STAT_NO_RESOURCES;
+        }
+      }
+      break;
+
+    case KCAN_IOCTL_OBJBUF_WRITE:
+      {
+        KCanObjbufBufferData io;
+        ArgPtrIn(sizeof(KCanObjbufBufferData));
+        copy_from_user_ret(&io, (KCanObjbufBufferData *)arg,
+                           sizeof(KCanObjbufBufferData), -EFAULT);
+
+        DEBUGPRINT(2, (TXT("ObjBuf Write nr=%x card_flags=0x%x\n"),
+                       io.buffer_number, chd->vCard->card_flags));
+        
+        if (io.buffer_number & OBJBUF_DRIVER_MARKER) {
+          int buffer_number = io.buffer_number & OBJBUF_DRIVER_MASK;
+          if (fileNodePtr->objbuf && (buffer_number < MAX_OBJECT_BUFFERS) &&
+              (fileNodePtr->objbuf[buffer_number].in_use)) {
+            fileNodePtr->objbuf[buffer_number].msg.tag    = V_TRANSMIT_MSG;
+            fileNodePtr->objbuf[buffer_number].msg.channel_index =
+              (unsigned char)fileNodePtr->chanNr;   // qqq What is this for?
+            fileNodePtr->objbuf[buffer_number].msg.id     = io.id;
+            fileNodePtr->objbuf[buffer_number].msg.flags  =
+              (unsigned char)io.flags;
+            fileNodePtr->objbuf[buffer_number].msg.length =
+              (unsigned char)io.dlc;
+            memcpy(fileNodePtr->objbuf[buffer_number].msg.data, io.data, 8);
+          } else {
+            vStat = VCAN_STAT_BAD_PARAMETER;
+          }
+        } else if (hwIf.objbufExists && hwIf.objbufWrite) {
+          if (hwIf.objbufExists(chd, OBJBUF_TYPE_AUTO_RESPONSE,
+                                io.buffer_number)) {
+            vStat = hwIf.objbufWrite(chd, OBJBUF_TYPE_AUTO_RESPONSE,
+                                     io.buffer_number,
+                                     io.id, io.flags, io.dlc, io.data);
+          }
+          else if (hwIf.objbufExists(chd, OBJBUF_TYPE_PERIODIC_TX,
+                                     io.buffer_number)) {
+            vStat = hwIf.objbufWrite(chd, OBJBUF_TYPE_PERIODIC_TX,
+                                     io.buffer_number,
+                                     io.id, io.flags, io.dlc, io.data);
+          } else {
+            vStat = VCAN_STAT_BAD_PARAMETER;
+          }
+        } else {
+          vStat = VCAN_STAT_NO_RESOURCES;
+        }
+      }
+      break;
+
+      
+    case KCAN_IOCTL_OBJBUF_SET_FILTER:
+      {
+        KCanObjbufAdminData io;
+        ArgPtrIn(sizeof(KCanObjbufAdminData));
+        copy_from_user_ret(&io, (KCanObjbufAdminData *)arg,
+                           sizeof(KCanObjbufAdminData), -EFAULT);
+
+        DEBUGPRINT(2, (TXT("ObjBuf SetFilter nr=%x card_flags=0x%x\n"),
+                       io.buffer_number, chd->vCard->card_flags));
+
+        if (io.buffer_number & OBJBUF_DRIVER_MARKER) {
+          int buffer_number = io.buffer_number & OBJBUF_DRIVER_MASK;
+          if (fileNodePtr->objbuf && (buffer_number < MAX_OBJECT_BUFFERS) &&
+              (fileNodePtr->objbuf[buffer_number].in_use))
+          {
+            fileNodePtr->objbuf[buffer_number].acc_code = io.acc_code;
+            fileNodePtr->objbuf[buffer_number].acc_mask = io.acc_mask;
+          } else {
+            vStat = VCAN_STAT_BAD_PARAMETER;
+          }
+        } else if (hwIf.objbufExists && hwIf.objbufSetFilter) {
+          if (hwIf.objbufExists(chd, OBJBUF_TYPE_AUTO_RESPONSE,
+                                io.buffer_number)) {
+            vStat = hwIf.objbufSetFilter(chd, OBJBUF_TYPE_AUTO_RESPONSE,
+                                         io.buffer_number,
+                                         io.acc_code, io.acc_mask);
+          } else {
+            vStat = VCAN_STAT_BAD_PARAMETER;
+          }
+        } else {
+          vStat = VCAN_STAT_NO_RESOURCES;
+        }
+      }
+      break;
+      
+    case KCAN_IOCTL_OBJBUF_SET_FLAGS:
+      {
+        KCanObjbufAdminData io;
+        ArgPtrIn(sizeof(KCanObjbufAdminData));
+        copy_from_user_ret(&io, (KCanObjbufAdminData *)arg,
+                           sizeof(KCanObjbufAdminData), -EFAULT);
+        
+        DEBUGPRINT(2, (TXT("ObjBuf SetFlags nr=%x card_flags=0x%x\n"),
+                       io.buffer_number, chd->vCard->card_flags));
+
+        if (io.buffer_number & OBJBUF_DRIVER_MARKER) {
+          int buffer_number = io.buffer_number & OBJBUF_DRIVER_MASK;
+          if (fileNodePtr->objbuf && (buffer_number < MAX_OBJECT_BUFFERS) &&
+              (fileNodePtr->objbuf[buffer_number].in_use))
+          {
+            fileNodePtr->objbuf[buffer_number].flags = io.flags;
+          } else {
+            vStat = VCAN_STAT_BAD_PARAMETER;
+          }
+        } else if (hwIf.objbufExists && hwIf.objbufSetFlags) {
+          if (hwIf.objbufExists(chd, OBJBUF_TYPE_AUTO_RESPONSE,
+                                io.buffer_number)) {
+            vStat = hwIf.objbufSetFlags(chd, OBJBUF_TYPE_AUTO_RESPONSE,
+                                        io.buffer_number,
+                                        io.flags);
+          } else if (hwIf.objbufExists(chd, OBJBUF_TYPE_PERIODIC_TX,
+                                       io.buffer_number)) {
+            vStat = hwIf.objbufSetFlags(chd, OBJBUF_TYPE_PERIODIC_TX,
+                                        io.buffer_number,
+                                        io.flags);
+          } else {
+            vStat = VCAN_STAT_BAD_PARAMETER;
+          }
+        } else {
+          vStat = VCAN_STAT_NO_RESOURCES;
+        }
+      }
+      break;
+      
+    case KCAN_IOCTL_OBJBUF_ENABLE:
+      {
+        KCanObjbufAdminData io;
+        ArgPtrIn(sizeof(KCanObjbufAdminData));
+        copy_from_user_ret(&io, (KCanObjbufAdminData *)arg,
+                           sizeof(KCanObjbufAdminData), -EFAULT);
+
+        DEBUGPRINT(2, (TXT("ObjBuf Enable nr=%x card_flags=0x%x\n"),
+                       io.buffer_number, chd->vCard->card_flags));
+        
+        if (io.buffer_number & OBJBUF_DRIVER_MARKER) {
+          int buffer_number = io.buffer_number & OBJBUF_DRIVER_MASK;
+          if (fileNodePtr->objbuf && (buffer_number < MAX_OBJECT_BUFFERS) &&
+              (fileNodePtr->objbuf[buffer_number].in_use))
+          {
+            fileNodePtr->objbuf[buffer_number].active = 1;
+          } else {
+            vStat = VCAN_STAT_BAD_PARAMETER;
+          }
+        } else if (hwIf.objbufExists && hwIf.objbufEnable) {
+          if (hwIf.objbufExists(chd, OBJBUF_TYPE_AUTO_RESPONSE,
+                                io.buffer_number)) {
+            vStat = hwIf.objbufEnable(chd, OBJBUF_TYPE_AUTO_RESPONSE,
+                                      io.buffer_number, 1);
+          } else if (hwIf.objbufExists(chd, OBJBUF_TYPE_PERIODIC_TX,
+                                       io.buffer_number)) {
+            vStat = hwIf.objbufEnable(chd, OBJBUF_TYPE_PERIODIC_TX,
+                                      io.buffer_number, 1);
+          } else {
+            vStat = VCAN_STAT_BAD_PARAMETER;
+          }
+        } else {
+          vStat = VCAN_STAT_NO_RESOURCES;
+        }
+      }
+      break;
+
+    case KCAN_IOCTL_OBJBUF_DISABLE:
+      {
+        KCanObjbufAdminData io;
+        ArgPtrIn(sizeof(KCanObjbufAdminData));
+        copy_from_user_ret(&io, (KCanObjbufAdminData *)arg,
+                           sizeof(KCanObjbufAdminData), -EFAULT);
+
+        DEBUGPRINT(2, (TXT("ObjBuf Disable nr=%x card_flags=0x%x\n"),
+                       io.buffer_number, chd->vCard->card_flags));
+
+        if (io.buffer_number & OBJBUF_DRIVER_MARKER) {
+          int buffer_number = io.buffer_number & OBJBUF_DRIVER_MASK;
+          if (fileNodePtr->objbuf && (buffer_number < MAX_OBJECT_BUFFERS) &&
+              (fileNodePtr->objbuf[buffer_number].in_use))
+          {
+            fileNodePtr->objbuf[buffer_number].active = 0;
+          } else {
+            vStat = VCAN_STAT_BAD_PARAMETER;
+          }
+        } else if (hwIf.objbufExists && hwIf.objbufEnable) {
+          if (hwIf.objbufExists(chd, OBJBUF_TYPE_AUTO_RESPONSE,
+                                io.buffer_number)) {
+            vStat = hwIf.objbufEnable(chd, OBJBUF_TYPE_AUTO_RESPONSE,
+                                      io.buffer_number, 0);
+          } else if (hwIf.objbufExists(chd, OBJBUF_TYPE_PERIODIC_TX,
+                                       io.buffer_number)) {
+            vStat = hwIf.objbufEnable(chd, OBJBUF_TYPE_PERIODIC_TX,
+                                      io.buffer_number, 0);
+          } else {
+            vStat = VCAN_STAT_BAD_PARAMETER;
+          }
+        } else {
+          vStat = VCAN_STAT_NO_RESOURCES;
+        }
+      }
+      break;
+
+    case KCAN_IOCTL_OBJBUF_SET_PERIOD:
+      {
+        KCanObjbufAdminData io;
+        ArgPtrIn(sizeof(KCanObjbufAdminData));
+        copy_from_user_ret(&io, (KCanObjbufAdminData *)arg,
+                           sizeof(KCanObjbufAdminData), -EFAULT);
+
+        DEBUGPRINT(2, (TXT("ObjBuf SetPeriod nr=%x card_flags=0x%x\n"),
+                       io.buffer_number, chd->vCard->card_flags));
+
+        if (io.buffer_number & OBJBUF_DRIVER_MARKER) {
+          int buffer_number = io.buffer_number & OBJBUF_DRIVER_MASK;
+          if (fileNodePtr->objbuf && (buffer_number < MAX_OBJECT_BUFFERS) &&
+              (fileNodePtr->objbuf[buffer_number].in_use))
+          {
+            // Driver-implemented auto tx buffers are not implemented.
+            // fileNodePtr->objbuf[buffer_number].period = io.period;
+            vStat = VCAN_STAT_NO_RESOURCES;   // qqq Not implemented
+          } else {
+            vStat = VCAN_STAT_BAD_PARAMETER;
+          }
+        } else if (hwIf.objbufExists && hwIf.objbufSetPeriod) {
+          if (hwIf.objbufExists(chd, OBJBUF_TYPE_PERIODIC_TX,
+                                io.buffer_number)) {
+            vStat = hwIf.objbufSetPeriod(chd, OBJBUF_TYPE_PERIODIC_TX,
+                                         io.buffer_number,
+                                         io.period);
+          } else {
+            vStat = VCAN_STAT_BAD_PARAMETER;
+          }
+        } else {
+          vStat = VCAN_STAT_NO_RESOURCES;   // qqq Not implemented
+        }
+      }
+      break;
+
+    case KCAN_IOCTL_OBJBUF_SET_MSG_COUNT:
+      {
+        KCanObjbufAdminData io;
+        ArgPtrIn(sizeof(KCanObjbufAdminData));
+        copy_from_user_ret(&io, (KCanObjbufAdminData *)arg,
+                           sizeof(KCanObjbufAdminData), -EFAULT);
+
+        DEBUGPRINT(2, (TXT("ObjBuf SetMsgCount nr=%x card_flags=0x%x\n"),
+                       io.buffer_number, chd->vCard->card_flags));
+
+        if (io.buffer_number & OBJBUF_DRIVER_MARKER) {
+          int buffer_number = io.buffer_number & OBJBUF_DRIVER_MASK;
+          if (fileNodePtr->objbuf && (buffer_number < MAX_OBJECT_BUFFERS) &&
+              (fileNodePtr->objbuf[buffer_number].in_use))
+          {
+            // Driver-implemented auto tx buffers are not implemented.
+            // fileNodePtr->objbuf[buffer_number].period = io.period;
+            vStat = VCAN_STAT_NO_RESOURCES;   // qqq Not implemented
+          } else {
+            vStat = VCAN_STAT_BAD_PARAMETER;
+          }
+        } else if (hwIf.objbufExists && hwIf.objbufSetMsgCount) {
+          if (hwIf.objbufExists(chd, OBJBUF_TYPE_PERIODIC_TX,
+                                io.buffer_number)) {
+            vStat = hwIf.objbufSetMsgCount(chd, OBJBUF_TYPE_PERIODIC_TX,
+                                           io.buffer_number,
+                                           io.period);
+          } else {
+            vStat = VCAN_STAT_BAD_PARAMETER;
+          }
+        } else {
+          vStat = VCAN_STAT_NO_RESOURCES;   // qqq Not implemented
+        }
+      }
+      break;
+
+    case KCAN_IOCTL_OBJBUF_SEND_BURST:
+      {
+        KCanObjbufAdminData io;
+        ArgPtrIn(sizeof(KCanObjbufAdminData));
+        copy_from_user_ret(&io, (KCanObjbufAdminData *)arg,
+                           sizeof(KCanObjbufAdminData), -EFAULT);
+#if 0
+        NTSTATUS stat = STATUS_NOT_IMPLEMENTED; 
+#endif
+
+        DEBUGPRINT(2, (TXT("ObjBuf SendBurst nr=%x card_flags=0x%x\n"),
+                       io.buffer_number, chd->vCard->card_flags));
+
+        if (io.buffer_number & OBJBUF_DRIVER_MARKER) {
+          int buffer_number = io.buffer_number & OBJBUF_DRIVER_MASK;
+          if (fileNodePtr->objbuf && (buffer_number < MAX_OBJECT_BUFFERS) &&
+              (fileNodePtr->objbuf[buffer_number].in_use))
+          {
+            // Driver-implemented auto tx buffers are not implemented.
+            vStat = VCAN_STAT_NO_RESOURCES;   // qqq Not implemented
+          } else {
+            vStat = VCAN_STAT_BAD_PARAMETER;
+          }
+        } else if (hwIf.objbufExists && hwIf.objbufSendBurst) {
+          if (hwIf.objbufExists(chd, OBJBUF_TYPE_PERIODIC_TX,
+                                io.buffer_number)) {
+            vStat = hwIf.objbufSendBurst(chd, OBJBUF_TYPE_PERIODIC_TX,
+                                         io.buffer_number,
+                                         io.period);
+          } else {
+            vStat = VCAN_STAT_BAD_PARAMETER;
+          }
+        } else {
+          vStat = VCAN_STAT_NO_RESOURCES;   // qqq Not implemented
+        }
+      }
+      break;
+
     default:
-      DEBUGPRINT(1, (TXT("vCanIOCtrl UNKNOWN VCAN_IOC!!!\n")));
+      DEBUGPRINT(1, (TXT("vCanIOCtrl UNKNOWN VCAN_IOC!!!: %d\n"), ioctl_cmd));
       return -EINVAL;
   }
   //------------------------------------------------------------------
 
-  return 0;
+  switch (vStat) {
+  case VCAN_STAT_OK:
+    return 0;
+  case VCAN_STAT_FAIL:
+    return -EIO;
+  case VCAN_STAT_TIMEOUT:
+    return -EAGAIN;
+  case VCAN_STAT_NO_DEVICE:
+    return -ENODEV;
+  case VCAN_STAT_NO_RESOURCES:
+    return -EAGAIN;
+  case VCAN_STAT_NO_MEMORY:
+    return -ENOMEM;
+  case VCAN_STAT_SIGNALED:
+    return -ERESTARTSYS;
+  case VCAN_STAT_BAD_PARAMETER:
+    return -EINVAL;
+  default:
+    return -EIO;
+  }
 }
 
 
 //======================================================================
 //  Poll - File operation
-//  This function is not reentrant with the same file descriptor!
 //======================================================================
 #if LINUX
 
 unsigned int vCanPoll (struct file *filp, poll_table *wait)
 {
-  VCanOpenFileNode  *fileNodePtr;
+  VCanOpenFileNode  *fileNodePtr = filp->private_data;
   VCanChanData      *chd;
   int full = 0;
   unsigned int mask = 0;
 
-  fileNodePtr = filp->private_data;
+  // Use semaphore to enforce mutual exclusion
+  // for a specific file descriptor.
+  os_if_down_sema(&fileNodePtr->ioctl_mutex);
+
   chd = fileNodePtr->chanData;
 
   full = txQFull(chd);
 
   // Add the channel wait queues to the poll
   poll_wait(filp, queue_space_event(&chd->txChanQueue), wait);
-  poll_wait(filp, &fileNodePtr->rxWaitQ, wait);
+  poll_wait(filp, &fileNodePtr->rcv.rxWaitQ, wait);
 
   if (!rxQEmpty(fileNodePtr)) {
     // Readable
@@ -1168,6 +1997,8 @@ unsigned int vCanPoll (struct file *filp, poll_table *wait)
     mask |= POLLOUT | POLLWRNORM;
     DEBUGPRINT(4, (TXT("vCanPoll: Channel %d writable\n"), fileNodePtr->chanNr));
   }
+
+  os_if_up_sema(&fileNodePtr->ioctl_mutex);
 
   return mask;
 }
@@ -1197,7 +2028,7 @@ int vCanInitData (VCanCardData *vCard)
   }
   DEBUGPRINT(4, (TXT("vCanInitCardData: minorsUsed 0x%x \n"), minorsUsed));
 
-  vCard->usPerTick = 1000;
+  vCard->usPerTick = 10; // Currently, a tick is 10us long
 
   for (chNr = 0; chNr < vCard->nrChannels; chNr++) {
     VCanChanData *vChd = vCard->chanData[chNr];
@@ -1223,6 +2054,9 @@ int vCanInitData (VCanCardData *vCard)
     queue_init(&vChd->txChanQueue, TX_CHAN_BUF_SIZE);
 
     os_if_spin_lock_init(&(vChd->openLock));
+    os_if_init_atomic_bit(&(vChd->waitEmpty));
+
+    atomic_set(&vChd->chanId, 1);
 
     // vCard points back to card
     vChd->vCard = vCard;
@@ -1237,7 +2071,7 @@ int vCanInitData (VCanCardData *vCard)
 
 // Major device number qqq
 
-int init_module (void)
+INIT int init_module (void)
 {
 #if LINUX
   int result;
@@ -1251,15 +2085,15 @@ int init_module (void)
   // Initialise card and data structures
   memset(&driverData, 0, sizeof(VCanDriverData));
 
-#if LINUX
   os_if_spin_lock_init(&canCardsLock);
 
+#if LINUX
   result = hwIf.initAllDevices();
   if (result == -ENODEV) {
-    DEBUGPRINT(1, (TXT("No Kvaser %s cards found!"), driverData.deviceName));
+    DEBUGPRINT(1, (TXT("No Kvaser %s cards found!\n"), driverData.deviceName));
     return -1;
   } else if (result != 0) {
-    DEBUGPRINT(1, (TXT("Error (%d) initializing Kvaser %s driver!"), result,
+    DEBUGPRINT(1, (TXT("Error (%d) initializing Kvaser %s driver!\n"), result,
                    driverData.deviceName));
     return -1;
   }
@@ -1271,6 +2105,7 @@ int init_module (void)
                               hwIf.procRead,
                               NULL           // client data
                               )) {
+    DEBUGPRINT(1, (TXT("Error creating proc read entry!\n")));
     hwIf.closeAllDevices();
     return -1;
   }
@@ -1283,7 +2118,7 @@ int init_module (void)
   if (result < 0) {
     DEBUGPRINT(1, (TXT("register_chrdev(%d, %s, %x) failed, error = %d\n"),
                    driverData.majorDevNr, driverData.deviceName,
-                   (int)&fops, result));
+                   (int)((int64_t)&fops), result));
     hwIf.closeAllDevices();
     return -1;
   }
@@ -1294,6 +2129,22 @@ int init_module (void)
 
   DEBUGPRINT(2, (TXT("REGISTER CHRDEV (%s) majordevnr = %d\n"),
                  driverData.deviceName, driverData.majorDevNr));
+#else
+  waitNodes[0].list.next = NULL;
+  waitNodes[0].replyPtr = waitNodes[0].data;
+
+  freeWaitNode = &waitNodes[0];
+  DEBUGPRINT(2, (TXT("(&waitNodes[0] = %p)\n"), &waitNodes[0]));
+  {
+    int i;
+    for(i = 1; i < sizeof(waitNodes) / sizeof(*waitNodes); i++) {
+      waitNodes[i].replyPtr = waitNodes[i].data;
+      waitNodes[i].list.next = freeWaitNode;
+      freeWaitNode = &waitNodes[i];
+      DEBUGPRINT(2, (TXT("(&waitNodes[%d] = %p)\n"),i, &waitNodes[i]));
+    }
+  }
+  DEBUGPRINT(2, (TXT("(freeWaitNode = %p)\n"),freeWaitNode));
 #endif
 
   os_if_do_get_time_of_day(&driverData.startTime);
@@ -1305,7 +2156,7 @@ int init_module (void)
 //======================================================================
 // Module shutdown
 //======================================================================
-void cleanup_module (void)
+EXIT void cleanup_module (void)
 {
 #if LINUX
   if (driverData.majorDevNr > 0) {
@@ -1317,5 +2168,6 @@ void cleanup_module (void)
   hwIf.closeAllDevices();
 #else
 #endif
+  os_if_spin_lock_remove(&canCardsLock);
 }
 //======================================================================

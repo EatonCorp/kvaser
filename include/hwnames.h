@@ -11,29 +11,41 @@
 #  error HWTYPE_NONE is already defined.
 #endif
 
-#define HWTYPE_NONE         0
-#define HWTYPE_VIRTUAL      1
-#define HWTYPE_CANCARDX     2
-#define HWTYPE_CANPARI      3
-#define HWTYPE_CANDONGLE    4
-#define HWTYPE_CANAC2       5
-#define HWTYPE_CANAC2PCI    6
-#define HWTYPE_CANCARD      7
-#define HWTYPE_PCCAN        8
-#define HWTYPE_HERMES       9  // also the deceased ISAcan
-#define HWTYPE_PCICAN       HWTYPE_HERMES
-#define HWTYPE_NEWPCMCIA   10  // Mars
-#define HWTYPE_DAPHNE      11  // also HWTYPE_NEWUSB
-#define HWTYPE_CANCARDY    12  // the one-channel CANcardX
+#define HWTYPE_NONE            0
+#define HWTYPE_VIRTUAL         1
+#define HWTYPE_CANCARDX        2
+#define HWTYPE_CANPARI         3
+#define HWTYPE_CANDONGLE       4
+#define HWTYPE_CANAC2          5
+#define HWTYPE_CANAC2PCI       6
+#define HWTYPE_CANCARD         7
+#define HWTYPE_PCCAN           8
+#define HWTYPE_HERMES          9  // also the deceased ISAcan
+#define HWTYPE_PCICAN          HWTYPE_HERMES
+#define HWTYPE_NEWPCMCIA      10  // Mars
+#define HWTYPE_DAPHNE         11  // also HWTYPE_NEWUSB
+#define HWTYPE_CANCARDY       12  // the one-channel CANcardX
 /* 13-39 are reserved to Vector, just to be sure */
-/* Vector will use all odd numbers and Kvaser all even numbers, as per an official agreement */
-#define HWTYPE_HELIOS        40  // Helios / PCIcan II
-#define HWTYPE_PCICAN_II   HWTYPE_HELIOS
-// Reserved to Vector      41
-#define HWTYPE_DEMETER     42  // USBcan II et al
-#define HWTYPE_SIMULATION  44  // kcanc for Creator
-#define HWTYPE_AURORA      46
-#define MAX_HWTYPE         46
+/* Vector will use all odd numbers and Kvaser all even numbers, as per a
+   semi-official agreement */
+// Vector CANcardXL           15  // Information only
+// Vector CANcaseXL           21  // Information only
+#define HWTYPE_HELIOS         40  // Helios / PCIcan II
+#define HWTYPE_PCICAN_II      HWTYPE_HELIOS
+// Reserved to Vector         41
+#define HWTYPE_DEMETER        42  // USBcan II, Memorator et al
+#define HWTYPE_SIMULATION     44  // kcanc for Creator
+#define HWTYPE_AURORA         46
+#define HWTYPE_FILO           48  // Leaf
+#define HWTYPE_PC104_PLUS     50
+#define HWTYPE_PCICANX_II     52
+#define HWTYPE_MEMORATOR_II   54
+#define HWTYPE_MEMORATOR_PRO  HWTYPE_MEMORATOR_II
+#define HWTYPE_USBCAN_PRO     56
+#define HWTYPE_BLACKBIRD      58
+#define HWTYPE_IRIS           HWTYPE_BLACKBIRD
+#define HWTYPE_MEMORATOR_LIGHT  60  // Memorator Light
+#define MAX_HWTYPE            60
 
 #ifdef HWNAME_NONE
 #  error HWNAME_NONE is already defined.

@@ -40,7 +40,7 @@
 #define PRINTX(t) DEBUGOUT(1,t)
 
 #if 0
-#define QUEUE_DEBUG				       \
+#define QUEUE_DEBUG                                    \
   if (!queue->size) {                                  \
     PRINT((TXT("Using unitialized queue\n")));         \
     return;                                            \
@@ -126,7 +126,7 @@
   }
 
 
-void queue_reinit(Queue *queue)
+void queue_reinit (Queue *queue)
 {
   unsigned long flags;
 
@@ -143,7 +143,8 @@ void queue_reinit(Queue *queue)
   UNLOCKQ(queue, flags);
 }
 
-void queue_init(Queue *queue, int size)
+
+void queue_init (Queue *queue, int size)
 {
   queue->lock_type = LOCK_TYPE;
   os_if_spin_lock_init(&queue->lock);
@@ -153,7 +154,14 @@ void queue_init(Queue *queue, int size)
   queue_reinit(queue);
 }
 
-int queue_length(Queue *queue)
+
+void queue_irq_lock (Queue *queue)
+{
+  queue->lock_type = Irq_lock;
+}
+
+
+int queue_length (Queue *queue)
 {
   int length;
 #ifndef ATOMIC_LENGTH
@@ -176,26 +184,29 @@ int queue_length(Queue *queue)
   return length;
 }
 
-int queue_full(Queue *queue)
+
+int queue_full (Queue *queue)
 {
   QUEUE_DEBUG_RET(0);
 
   return queue_length(queue) >= queue->size - 1;
 }
 
-int queue_empty(Queue *queue)
+
+int queue_empty (Queue *queue)
 {
   QUEUE_DEBUG_RET(1);
 
   return queue_length(queue) == 0;
 }
 
+
 // Lock will be held when this returns.
 // Must be released with a call to queue_push/release()
 // as soon as possible. Make _sure_ not to sleep inbetween!
 // (Storing irq flags like this is supposedly incompatible
 //  with Sparc CPU:s. But that only applies for Irq_lock queues.)
-int queue_back(Queue *queue)
+int queue_back (Queue *queue)
 {
   int back;
   unsigned long flags;
@@ -227,8 +238,9 @@ int queue_back(Queue *queue)
   return back;
 }
 
+
 // Lock must be held from a previous queue_back().
-void queue_push(Queue *queue)
+void queue_push (Queue *queue)
 {
   QUEUE_DEBUG;
 
@@ -242,10 +254,11 @@ void queue_push(Queue *queue)
   UNLOCKQ(queue, queue->flags);
 }
 
+
 // Lock will be held when this returns.
 // Must be released with a call to queue_pop/release()
 // as soon as possible. Make _sure_ not to sleep inbetween!
-int queue_front(Queue *queue)
+int queue_front (Queue *queue)
 {
   int front;
   unsigned long flags;
@@ -272,8 +285,9 @@ int queue_front(Queue *queue)
   return front;
 }
 
+
 // Lock must be held from a previous queue_front().
-void queue_pop(Queue *queue)
+void queue_pop (Queue *queue)
 {
   QUEUE_DEBUG;
 
@@ -287,8 +301,9 @@ void queue_pop(Queue *queue)
   UNLOCKQ(queue, queue->flags);
 }
 
+
 // Lock must be held from a previous queue_front/back().
-void queue_release(Queue *queue)
+void queue_release (Queue *queue)
 {
   QUEUE_DEBUG;
 
@@ -297,22 +312,24 @@ void queue_release(Queue *queue)
 }
 
 
-void queue_add_wait_for_space(Queue *queue, OS_IF_WAITQUEUE *waiter)
+void queue_add_wait_for_space (Queue *queue, OS_IF_WAITQUEUE *waiter)
 {
   QUEUE_DEBUG;
 
   os_if_add_wait_queue(&queue->space_event, waiter);
 }
 
-void queue_remove_wait_for_space(Queue *queue, OS_IF_WAITQUEUE *waiter)
+
+void queue_remove_wait_for_space (Queue *queue, OS_IF_WAITQUEUE *waiter)
 {
   QUEUE_DEBUG;
 
   os_if_remove_wait_queue(&queue->space_event, waiter);
 }
 
+
 #if 0
-void queue_add_wait_for_data(Queue *queue, OS_IF_WAITQUEUE *waiter)
+void queue_add_wait_for_data (Queue *queue, OS_IF_WAITQUEUE *waiter)
 {
   QUEUE_DEBUG;
 
@@ -320,14 +337,16 @@ void queue_add_wait_for_data(Queue *queue, OS_IF_WAITQUEUE *waiter)
 }
 #endif
 
-void queue_wakeup_on_space(Queue *queue)
+
+void queue_wakeup_on_space (Queue *queue)
 {
   QUEUE_DEBUG;
 
   os_if_wake_up_interruptible(&queue->space_event);
 }
 
-OS_IF_WAITQUEUE_HEAD *queue_space_event(Queue *queue)
+
+OS_IF_WAITQUEUE_HEAD *queue_space_event (Queue *queue)
 {
   QUEUE_DEBUG_RET(0);
 

@@ -16,15 +16,11 @@
 #   include <asm/system.h>
 #   include <asm/bitops.h>
 #   include <asm/uaccess.h>
-#   if LINUX_2_6
-#       include <linux/workqueue.h>
-#       include <linux/wait.h>
-#       include <linux/completion.h>
-#       include <linux/kthread.h>
-#       include <linux/module.h>
-#   else
-#       include <linux/tqueue.h>
-#   endif
+#   include <linux/workqueue.h>
+#   include <linux/wait.h>
+#   include <linux/completion.h>
+#   include <linux/kthread.h>
+#   include <linux/module.h>
 #else
 #   include <windows.h>
 #   include <ceddk.h>
@@ -35,6 +31,9 @@
 // Common
 #include "osif_kernel.h"
 #include "osif_functions_kernel.h"
+#if !LINUX
+#  include "osif_user.h"
+#endif
 #include "debug.h"
 
 #ifdef BREAKPOINTS
@@ -137,13 +136,7 @@ unsigned int os_if_read_port (unsigned portAddr)
 int os_if_queue_task (OS_IF_TASK_QUEUE_HANDLE *hnd)
 {
 #if LINUX
-    #if LINUX_2_6
-      return schedule_work(hnd); // ret nonzero if ok
-    #else
-      int ret = queue_task(hnd, &tq_immediate);
-      mark_bh(IMMEDIATE_BH);
-      return ret;
-    #endif
+  return schedule_work(hnd); // ret nonzero if ok
 #else
   // This is not used, so don't bother with implementation for now.
   UNREFERENCED_PARAMETER(hnd);
@@ -160,13 +153,7 @@ int os_if_queue_task_not_default_queue (OS_IF_WQUEUE *wq,
                                         OS_IF_TASK_QUEUE_HANDLE *hnd)
 {
 #if LINUX
-    #if LINUX_2_6
-      return queue_work(wq, hnd); // ret nonzero if ok
-    #else
-      int ret = queue_task(hnd, &tq_immediate);
-      mark_bh(IMMEDIATE_BH);
-      return ret;
-    #endif
+  return queue_work(wq, hnd); // ret nonzero if ok
 #else
   UNREFERENCED_PARAMETER(hnd);
 
@@ -194,6 +181,45 @@ void os_if_init_waitqueue_head (OS_IF_WAITQUEUE_HEAD *handle)
 #endif
 }
 
+#if !LINUX
+// WinCE doesn't have a strnlen yet...
+static size_t os_if_strnlen(char *str, size_t maxlen) {
+  size_t i;
+  
+  for (i = 0; i < maxlen; i++) {
+    if (str[i] == '\0') break;
+  }
+  
+  return i;
+}
+#endif
+
+//////////////////////////////////////////////////////////////////////
+// os_if_init_named_waitqueue_head
+//
+//////////////////////////////////////////////////////////////////////
+void os_if_init_named_waitqueue_head (OS_IF_WAITQUEUE_HEAD *handle, char *name)
+{
+#if LINUX
+  init_waitqueue_head(handle);
+#else
+  WCHAR eventName[DEVICE_NAME_LEN];
+
+  if (os_if_strnlen(name, DEVICE_NAME_LEN) + 1 /*null*/ <= DEVICE_NAME_LEN) {
+    wsprintf(eventName, L"%S", name);
+
+  // Instead of on a queue, everyone will be waiting on this event.
+  // The event will later be pulsed, releasing all currently waiting.
+  // See os_if_wake_up_interruptible().
+    *handle = CreateEvent(NULL, TRUE, FALSE, eventName);
+  }
+  else {
+    *handle = NULL;
+  }
+#endif
+}
+
+
 //////////////////////////////////////////////////////////////////////
 // os_if_delete_waitqueue_head
 //
@@ -219,11 +245,7 @@ void os_if_delete_waitqueue_head (OS_IF_WAITQUEUE_HEAD *handle)
 void os_if_init_waitqueue_entry (OS_IF_WAITQUEUE *wait)
 {
 #if LINUX
-    #if LINUX_2_6
-      init_waitqueue_entry(wait, current);
-    #else
-      init_waitqueue_entry(wait, current);
-    #endif
+  init_waitqueue_entry(wait, current);
 #else
   // Wait queues are implemented using events, so nothing is needed here.
   UNREFERENCED_PARAMETER(wait);
@@ -238,11 +260,7 @@ void os_if_init_waitqueue_entry (OS_IF_WAITQUEUE *wait)
 void os_if_add_wait_queue (OS_IF_WAITQUEUE_HEAD *waitQ, OS_IF_WAITQUEUE *wait)
 {
 #if LINUX
-    #if LINUX_2_6
-      add_wait_queue(waitQ, wait);
-    #else
-      add_wait_queue(waitQ, wait);
-    #endif
+  add_wait_queue(waitQ, wait);
 #else
   // There is no queue, so just point out the event.
   *wait = *waitQ;
@@ -257,11 +275,7 @@ void os_if_add_wait_queue (OS_IF_WAITQUEUE_HEAD *waitQ, OS_IF_WAITQUEUE *wait)
 void os_if_remove_wait_queue (OS_IF_WAITQUEUE_HEAD *waitQ, OS_IF_WAITQUEUE *wait)
 {
 #if LINUX
-    #if LINUX_2_6
-      remove_wait_queue(waitQ, wait);
-    #else
-      remove_wait_queue(waitQ, wait);
-    #endif
+  remove_wait_queue(waitQ, wait);
 #else
   UNREFERENCED_PARAMETER(waitQ);
   UNREFERENCED_PARAMETER(wait);
@@ -277,12 +291,9 @@ signed long os_if_wait_for_event_timeout (signed long timeout,
                                           OS_IF_WAITQUEUE *handle)
 {
 #if LINUX
-    #if LINUX_2_6
-      //return wait_event_interruptible_timeout(handle, condition, timeout);
-      return schedule_timeout(timeout);
-    #else
-      return schedule_timeout(timeout);
-    #endif
+  //return wait_event_interruptible_timeout(handle, condition,
+  //                                        msecs_to_jiffies(timeout) + 1);
+  return schedule_timeout(msecs_to_jiffies(timeout) + 1);
 #else
   if (!handle) {
     DEBUGOUT(ZONE_ERR,
@@ -309,11 +320,7 @@ signed long os_if_wait_for_event_timeout (signed long timeout,
 signed long os_if_wait_for_event_timeout_simple (signed long timeout)
 {
 #if LINUX
-    #if LINUX_2_6
-      return schedule_timeout(timeout);
-    #else
-      return schedule_timeout(timeout);
-    #endif
+  return schedule_timeout(msecs_to_jiffies(timeout) + 1);
 #else
   Sleep(timeout);
 
@@ -357,18 +364,37 @@ void os_if_wake_up_interruptible (OS_IF_WAITQUEUE_HEAD *handle)
 }
 
 //////////////////////////////////////////////////////////////////////
+// os_if_mark_event
+//
+//////////////////////////////////////////////////////////////////////
+#if !LINUX
+void os_if_mark_event (OS_IF_WAITQUEUE_HEAD *handle)
+{
+  SetEvent(*handle);
+}
+#endif
+
+//////////////////////////////////////////////////////////////////////
+// os_if_clear_event
+//
+//////////////////////////////////////////////////////////////////////
+#if !LINUX
+void os_if_clear_event (OS_IF_WAITQUEUE_HEAD *handle)
+{
+  ResetEvent(*handle);
+}
+#endif
+
+
+//////////////////////////////////////////////////////////////////////
 // os_if_up_sema
 //
 //////////////////////////////////////////////////////////////////////
 void os_if_up_sema (OS_IF_SEMAPHORE *var)
 {
 #if LINUX
-#   if LINUX_2_6
-      complete(var);
-      //os_if_wake_up_interruptible(var);
-#   else
-      up(var);
-#   endif
+  complete(var);
+  //os_if_wake_up_interruptible(var);
 #else
 #if 1
   if (!SetEvent(*var)) {
@@ -388,12 +414,8 @@ void os_if_up_sema (OS_IF_SEMAPHORE *var)
 void os_if_down_sema (OS_IF_SEMAPHORE *var)
 {
 #if LINUX
-#   if LINUX_2_6
-      wait_for_completion(var);
-      // interruptible_sleep_on(var);
-#   else
-      down(var);
-#   endif
+  wait_for_completion(var);
+  // interruptible_sleep_on(var);
 #else
   if (WAIT_OBJECT_0 != WaitForSingleObject(*var, INFINITE)) {
     DEBUGOUT(ZONE_ERR,
@@ -434,12 +456,8 @@ int os_if_down_sema_time (OS_IF_SEMAPHORE *var, int timeout)
 void os_if_init_sema (OS_IF_SEMAPHORE *var)
 {
 #if LINUX
-#   if LINUX_2_6
-      init_completion(var);
-      //os_if_init_waitqueue_head(var);
-#   else
-      sema_init(var, 0);
-#   endif
+  init_completion(var);
+  //os_if_init_waitqueue_head(var);
 #else
 #if 1
   // Auto reset event (single wait possible per set)
@@ -694,6 +712,7 @@ void os_if_rec_not_busy (int nr, volatile unsigned long *addr)
 // os_if_spin_lock_init
 //
 //////////////////////////////////////////////////////////////////////
+#if !LINUX
 void os_if_spin_lock_init (OS_IF_LOCK *lock)
 {
 #if LINUX
@@ -702,6 +721,7 @@ void os_if_spin_lock_init (OS_IF_LOCK *lock)
   InitializeCriticalSection(lock);
 #endif
 }
+#endif
 
 //////////////////////////////////////////////////////////////////////
 // os_if_spin_lock
@@ -754,11 +774,7 @@ void os_if_irq_disable (OS_IF_LOCK *lock)
 {
 // qqq should work for 2_4 too!
 #if LINUX
-    #if LINUX_2_6
-      spin_lock_irq(lock);
-    #else
-      cli();
-    #endif
+  spin_lock_irq(lock);
 #else
   EnterCriticalSection(lock);
 #endif
@@ -771,12 +787,7 @@ void os_if_irq_disable (OS_IF_LOCK *lock)
 void os_if_irq_enable (OS_IF_LOCK *lock)
 {
 #if LINUX
-  // qqq should work for 2_4 too!
-    #if LINUX_2_6
-      spin_unlock_irq(lock);
-    #else
-      sti();
-    #endif
+  spin_unlock_irq(lock);
 #else
   LeaveCriticalSection(lock);
 #endif
@@ -789,10 +800,7 @@ void os_if_irq_enable (OS_IF_LOCK *lock)
 void os_if_irq_save (OS_IF_LOCK *lock, unsigned long *flags)
 {
 #if LINUX
-  // not needed in 2_4
-    #if LINUX_2_6
-      spin_lock_irqsave(lock, *flags);
-    #endif
+  spin_lock_irqsave(lock, *flags);
 #else
   UNREFERENCED_PARAMETER(flags);
   EnterCriticalSection(lock);
@@ -806,10 +814,7 @@ void os_if_irq_save (OS_IF_LOCK *lock, unsigned long *flags)
 void os_if_irq_restore (OS_IF_LOCK *lock, unsigned long flags)
 {
 #if LINUX
-  // not needed in 2_4
-    #if LINUX_2_6
-      spin_unlock_irqrestore(lock, flags);
-    #endif
+  spin_unlock_irqrestore(lock, flags);
 #else
   UNREFERENCED_PARAMETER(flags);
   LeaveCriticalSection(lock);
@@ -1009,11 +1014,27 @@ int os_if_get_long (long *val, long *src)
 OS_IF_WQUEUE* os_if_declare_task (char *name, OS_IF_TASK_QUEUE_HANDLE *taskQ)
 {
 #if LINUX
-#   if LINUX_2_6
-      return create_workqueue(name);
-#   else
-      return 0;
-#   endif
+  return create_workqueue(name);
+#else
+  UNREFERENCED_PARAMETER(name);
+
+  return taskQ;
+#endif
+}
+
+//////////////////////////////////////////////////////////////////////
+// os_if_declare_rt_task
+//
+//////////////////////////////////////////////////////////////////////
+OS_IF_WQUEUE* os_if_declare_rt_task (char *name, OS_IF_TASK_QUEUE_HANDLE *taskQ)
+{
+#if LINUX
+# if defined(create_rt_workqueue)
+  return create_rt_workqueue(name);
+# else
+  DEBUGOUT(1, (TXT("Failed to create realtime work queue. Do it manually!\n")));
+  return create_workqueue(name);
+# endif
 #else
   UNREFERENCED_PARAMETER(name);
 
@@ -1028,11 +1049,10 @@ OS_IF_WQUEUE* os_if_declare_task (char *name, OS_IF_TASK_QUEUE_HANDLE *taskQ)
 void os_if_destroy_task (OS_IF_WQUEUE *wQueue)
 {
 #if LINUX
-#   if LINUX_2_6
-      destroy_workqueue(wQueue);
-#   else
-#   endif
+  destroy_workqueue(wQueue);
 #else
+  int triesleft;
+  DWORD exitcode;
   wQueue->info.shutdown = 1;
 
   // Tell task that there is some work to do.
@@ -1045,6 +1065,19 @@ void os_if_destroy_task (OS_IF_WQUEUE *wQueue)
 
   os_if_delete_countsem(&wQueue->info.work);
   os_if_delete_sema(&wQueue->info.finished);
+
+  triesleft = 100;
+  do {
+    if (!GetExitCodeThread(wQueue->thread, &exitcode)) {
+      DEBUGOUT(1,(TXT("GetExitCodeThread failed, GLE = %x\n"), GetLastError()));
+    }
+    triesleft--;
+    Sleep(100);
+  } while (STILL_ACTIVE == exitcode && triesleft);
+  if (!GetExitCodeThread(wQueue->thread, &exitcode)) {
+    DEBUGOUT(1,(TXT("GetExitCodeThread failed, GLE = %x\n"), GetLastError()));
+  }
+
   os_if_remove_thread(wQueue->thread);
   // Wait for destruction?
 #endif
@@ -1071,7 +1104,7 @@ static DWORD task (LPVOID context)
 
   BREAK(0x8000, "Task2");
 
-  return 0;
+  return 0; // has to be != from STILL_ACTIVE (259)
 }
 #endif
 
@@ -1082,17 +1115,12 @@ static DWORD task (LPVOID context)
 void os_if_init_task (OS_IF_TASK_QUEUE_HANDLE *taskQ, void *function, void *data)
 {
 #if LINUX
-    #if LINUX_2_6
-        // Work queue functions get the taskQ pointer in 2.6.20+.
-        #if (LINUX_VERSION_CODE < 0x020614)
-          INIT_WORK(taskQ, function, data);
-        #else
-          INIT_WORK(taskQ, function);
-        #endif
-    #else
-      taskQ->routine  = function;
-      taskQ->data     = data;
-    #endif
+  // Work queue functions get the taskQ pointer in 2.6.20+.
+#  if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 20))
+     INIT_WORK(taskQ, function, data);
+#  else
+     INIT_WORK(taskQ, function);
+#  endif
 #else
   taskQ->info.data = data;
   taskQ->info.routine = function;
@@ -1155,10 +1183,7 @@ void os_if_set_task_running (void)
 void os_if_rwlock_init (rwlock_t *lock)
 {
 #if LINUX
-  // Do nothing
-#if LINUX_2_6
   rwlock_init(lock);
-#endif
 #else
   InitializeCriticalSection(lock);
 #endif
@@ -1171,11 +1196,7 @@ void os_if_rwlock_init (rwlock_t *lock)
 void os_if_read_lock_irqsave (rwlock_t *rw_lock, unsigned long *flags)
 {
 #if LINUX
-  // Do nothing
-#if LINUX_2_6
   read_lock_irqsave(rw_lock, *flags);
-#else
-#endif
 #else
   UNREFERENCED_PARAMETER(flags);
   EnterCriticalSection(rw_lock);
@@ -1189,11 +1210,7 @@ void os_if_read_lock_irqsave (rwlock_t *rw_lock, unsigned long *flags)
 void os_if_read_unlock_irqrestore (rwlock_t *rw_lock, unsigned long flags)
 {
 #if LINUX
-  // Do nothing
-#if LINUX_2_6
   read_unlock_irqrestore(rw_lock, flags);
-#else
-#endif
 #else
   UNREFERENCED_PARAMETER(flags);
   LeaveCriticalSection(rw_lock);
@@ -1207,10 +1224,7 @@ void os_if_read_unlock_irqrestore (rwlock_t *rw_lock, unsigned long flags)
 void os_if_write_lock_irqsave (rwlock_t *rw_lock, unsigned long *flags)
 {
 #if LINUX
-  // do nothing
-    #if LINUX_2_6
-      write_lock_irqsave(rw_lock, *flags);
-    #endif
+  write_lock_irqsave(rw_lock, *flags);
 #else
   UNREFERENCED_PARAMETER(flags);
   EnterCriticalSection(rw_lock);
@@ -1224,10 +1238,7 @@ void os_if_write_lock_irqsave (rwlock_t *rw_lock, unsigned long *flags)
 void os_if_write_unlock_irqrestore (rwlock_t *rw_lock, unsigned long flags)
 {
 #if LINUX
-  // do nothing
-    #if LINUX_2_6
-      write_unlock_irqrestore(rw_lock, flags);
-    #endif
+  write_unlock_irqrestore(rw_lock, flags);
 #else
   UNREFERENCED_PARAMETER(flags);
   LeaveCriticalSection(rw_lock);
@@ -1327,27 +1338,19 @@ void os_if_kernel_free (void *mem_ptr)
 //
 //////////////////////////////////////////////////////////////////////
 #if LINUX
-#  if LINUX_2_6
 OS_IF_THREAD os_if_kernel_thread (int (*thread)(void *context), void *context)
 {
-#  else
-// 2.4
-#  endif
 #else
 OS_IF_THREAD os_if_kernel_thread (DWORD (*thread)(LPVOID context), LPVOID context)
 {
 #endif
 
 #if LINUX
-#   if LINUX_2_6
- #if 0
-      return kernel_thread(thread, context, CLONE_KERNEL);
- #else
-      return kthread_run(thread, context, "Kvaser kernel thread");
- #endif
-#   else
-      // 2.4
-#   endif
+# if 0
+  return kernel_thread(thread, context, CLONE_KERNEL);
+# else
+  return kthread_run(thread, context, "Kvaser kernel thread");
+# endif
 #else
   OS_IF_THREAD hnd;
 
@@ -1361,7 +1364,8 @@ OS_IF_THREAD os_if_kernel_thread (DWORD (*thread)(LPVOID context), LPVOID contex
 
   // The CE documentation mentioned USB Function at priority 100, so why not?
   // Might be a good idea to have this modifiable via the registry.
-  if (!CeSetThreadPriority(hnd, 100)) {
+  // Changed from 100 to 106 to make we don't run on higher prio than OHCD/UHCD
+  if (!CeSetThreadPriority(hnd, 106)) {
     DEBUGOUT(ZONE_ERR,
              (TXT("Could not change thread priority(%d)!\n"), GetLastError()));
   }
@@ -1369,11 +1373,7 @@ OS_IF_THREAD os_if_kernel_thread (DWORD (*thread)(LPVOID context), LPVOID contex
   return hnd;
 #endif
 #if LINUX
-#  if LINUX_2_6
 }
-#  else
-// 2.4
-#  endif
 #else
 }
 #endif
@@ -1400,11 +1400,77 @@ void os_if_remove_thread (OS_IF_THREAD thread)
 void os_if_exit_thread (int result)
 {
 #if LINUX
-#   if LINUX_2_6
-      module_put_and_exit(result);
-#   else
-      // 2.4
-#   endif
+  module_put_and_exit(result);
 #else
 #endif
 }
+
+#if LINUX
+void os_if_init_atomic_bit (OS_IF_ATOMIC_BIT *ab)
+{
+  // Nothing to do
+}
+
+void os_if_remove_atomic_bit (OS_IF_ATOMIC_BIT *ab)
+{
+  // Nothing to do
+}
+#else
+void os_if_init_atomic_bit (OS_IF_ATOMIC_BIT *ab)
+{
+  os_if_spin_lock_init(&ab->critsect);
+}
+
+void os_if_remove_atomic_bit (OS_IF_ATOMIC_BIT *ab)
+{
+  os_if_spin_lock_remove(&ab->critsect);
+}
+  
+int test_and_clear_bit (int nr, OS_IF_ATOMIC_BIT *ab)
+{
+  int old_value;
+  EnterCriticalSection(&ab->critsect);
+  old_value  = ab->value;
+  ab->value &= ~(1 << nr); // Clear
+  LeaveCriticalSection(&ab->critsect);
+
+  return !!(old_value & (1 << nr));
+}
+
+int constant_test_bit (int nr, OS_IF_ATOMIC_BIT *ab)
+{
+  int value;
+
+  EnterCriticalSection(&ab->critsect);
+  value = ab->value;
+  LeaveCriticalSection(&ab->critsect);
+
+  return !!(value & (1 << nr));
+}
+
+void clear_bit (int nr, OS_IF_ATOMIC_BIT *ab)
+{
+  EnterCriticalSection(&ab->critsect);
+  ab->value &= ~(1 << nr); // Clear
+  LeaveCriticalSection(&ab->critsect);
+}
+
+void set_bit (int nr, OS_IF_ATOMIC_BIT *ab)
+{
+  EnterCriticalSection(&ab->critsect);
+  ab->value |= (1 << nr); // set
+  LeaveCriticalSection(&ab->critsect);
+}
+
+// qqq These are not atomic yet!
+void atomic_set_mask (long mask, long *addr)
+{
+  *addr |= mask;
+}
+
+void atomic_clear_mask (long mask, long *addr)
+{
+  *addr &= ~mask;
+}
+#endif
+

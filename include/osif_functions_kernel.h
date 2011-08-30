@@ -10,7 +10,10 @@
 
 //////////////////////////////////////////////////////////////////////
 //
-#if LINUX
+#if LINUX_2_6
+#define os_if_wait_event_interruptible_timeout(wq, condition, timeout)  \
+  wait_event_interruptible_timeout(wq, condition, msecs_to_jiffies(timeout) + 1)
+#elif LINUX
 #define __os_if_wait_event_interruptible_timeout(wq, condition, ret)    \
 do {                                                                    \
   wait_queue_t __wait;                                                  \
@@ -39,7 +42,7 @@ do {                                                                    \
 
 #define os_if_wait_event_interruptible_timeout(wq, condition, timeout)  \
 ({                                                                      \
-  long __ret = timeout;                                                 \
+  long __ret = msecs_to_jiffies(timeout) + 1;                           \
   if (!(condition)) {                                                   \
     __os_if_wait_event_interruptible_timeout(wq, condition, __ret);     \
   }                                                                     \
@@ -71,6 +74,10 @@ int os_if_queue_task_not_default_queue(OS_IF_WQUEUE *wq,
 //////////////////////////////////////////////////////////////////////
 //
 void os_if_init_waitqueue_head(OS_IF_WAITQUEUE_HEAD *handle);
+
+//////////////////////////////////////////////////////////////////////
+//
+void os_if_init_named_waitqueue_head(OS_IF_WAITQUEUE_HEAD *handle, char *name);
 
 //////////////////////////////////////////////////////////////////////
 //
@@ -111,6 +118,19 @@ void os_if_wait_for_event(OS_IF_WAITQUEUE_HEAD *handle);
 //////////////////////////////////////////////////////////////////////
 //
 void os_if_wake_up_interruptible(OS_IF_WAITQUEUE_HEAD *handle);
+
+//////////////////////////////////////////////////////////////////////
+//
+#if !LINUX
+void os_if_mark_event (OS_IF_WAITQUEUE_HEAD *handle);
+#endif
+
+//////////////////////////////////////////////////////////////////////
+//
+#if !LINUX
+void os_if_clear_event (OS_IF_WAITQUEUE_HEAD *handle);
+#endif
+
 
 //////////////////////////////////////////////////////////////////////
 //
@@ -172,23 +192,27 @@ void os_if_do_get_time_of_day(OS_IF_TIME_VAL *tv);
 
 //////////////////////////////////////////////////////////////////////
 //
-int os_if_is_rec_busy(int nr, volatile unsigned long* addr);
+int os_if_is_rec_busy(int nr, volatile unsigned long *addr);
 
 //////////////////////////////////////////////////////////////////////
 //
-void os_if_rec_not_busy(int nr, volatile unsigned long * addr);
+void os_if_rec_not_busy(int nr, volatile unsigned long *addr);
 
 //////////////////////////////////////////////////////////////////////
 //
+#if !LINUX
 void os_if_spin_lock_init(OS_IF_LOCK *lock);
+#else
+# define os_if_spin_lock_init(lock) spin_lock_init(lock)
+#endif
 
 //////////////////////////////////////////////////////////////////////
 //
-void os_if_spin_lock(OS_IF_LOCK* lock);
+void os_if_spin_lock(OS_IF_LOCK *lock);
 
 //////////////////////////////////////////////////////////////////////
 //
-void os_if_spin_unlock(OS_IF_LOCK* lock);
+void os_if_spin_unlock(OS_IF_LOCK *lock);
 
 //////////////////////////////////////////////////////////////////////
 //
@@ -252,6 +276,10 @@ OS_IF_WQUEUE* os_if_declare_task(char *name, OS_IF_TASK_QUEUE_HANDLE *taskQ);
 
 //////////////////////////////////////////////////////////////////////
 //
+OS_IF_WQUEUE* os_if_declare_rt_task(char *name, OS_IF_TASK_QUEUE_HANDLE *taskQ);
+
+//////////////////////////////////////////////////////////////////////
+//
 void os_if_destroy_task(OS_IF_WQUEUE *wQueue);
 
 //////////////////////////////////////////////////////////////////////
@@ -280,7 +308,7 @@ void os_if_write_unlock_irqrestore(rwlock_t *rw_lock, unsigned long flags);
 
 //////////////////////////////////////////////////////////////////////
 //
-void os_if_rw_lock_remove(rwlock_t *lock);
+void os_if_rwlock_remove(rwlock_t *lock);
 
 //////////////////////////////////////////////////////////////////////
 //
@@ -322,5 +350,26 @@ void os_if_wait_for_cond(OS_IF_EVENT *event);
 void os_if_init_cond(OS_IF_EVENT *sem);
 void os_if_delete_cond(OS_IF_EVENT *event);
 #endif
+
+#if LINUX
+  typedef unsigned long AtomicBit;
+  typedef AtomicBit OS_IF_ATOMIC_BIT;
+#else
+  typedef struct
+  {
+    OS_IF_LOCK critsect;
+    unsigned long value;
+  } OS_IF_ATOMIC_BIT;
+  
+  int test_and_clear_bit(int nr, OS_IF_ATOMIC_BIT *ab);
+  int constant_test_bit(int nr, OS_IF_ATOMIC_BIT *ab);
+  void clear_bit(int nr, OS_IF_ATOMIC_BIT *ab);
+  void set_bit(int nr, OS_IF_ATOMIC_BIT *ab);
+  void atomic_set_mask(long mask, long *addr);
+  void atomic_clear_mask(long mask, long *addr);
+#endif
+  
+  void os_if_init_atomic_bit(OS_IF_ATOMIC_BIT *ab);
+  void os_if_remove_atomic_bit(OS_IF_ATOMIC_BIT *ab);
 
 #endif //OSIF_FUNCTIONS_KERNEL_H_

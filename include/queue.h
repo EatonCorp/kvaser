@@ -38,6 +38,7 @@ typedef struct {
 
 extern void queue_reinit(Queue *queue);
 extern void queue_init(Queue *queue, int size);
+extern void queue_irq_lock(Queue *queue);
 extern int  queue_length(Queue *queue);
 extern int  queue_full(Queue *queue);
 extern int  queue_empty(Queue *queue);

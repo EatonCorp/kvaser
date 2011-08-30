@@ -17,6 +17,7 @@
 
 #include "osif_kernel.h"
 #include "filo_cmds.h"
+#include "objbuf.h"
 
 /*****************************************************************************/
 /* defines */
@@ -25,10 +26,10 @@
 #if LINUX
 #define DEVICE_NAME_STRING                    "leaf"
 #endif
-#define MAX_CHANNELS                               2
+#define MAX_CHANNELS                               3
 #define KV_LEAF_MAIN_RCV_BUF_SIZE                 16
 #define KV_LEAF_TX_CMD_BUF_SIZE                   16
-#define LEAF_CMD_RESP_WAIT_TIME                  500
+#define LEAF_CMD_RESP_WAIT_TIME                 5000
 #define DEMETER_MAX_OUTSTANDING_TX               128
 
 
@@ -45,17 +46,6 @@
 #else
 #   define LEAF_Q_CMD_WAIT_TIME                 200
 #endif
-
-
-typedef struct LeafWaitNode {
-  struct list_head list;
-  OS_IF_SEMAPHORE   waitSemaphore;
-  filoCmd *replyPtr;
-  unsigned char cmdNr;
-  unsigned char transId;
-  unsigned char timedOut;
-} LeafWaitNode;
-
 
 
 /* Channel specific data */
@@ -76,16 +66,22 @@ typedef struct LeafChanData
 #endif
 
   unsigned int           timestamp_correction_value;
-} LeafChanData;
+
+  OBJECT_BUFFER          *objbufs;
+
+  // qqq Max_outstanding_tx is received from the card
+  CAN_MSG          current_tx_message[DEMETER_MAX_OUTSTANDING_TX];
+
+  } LeafChanData;
 
 
 
 /*  Cards specific data */
 typedef struct LeafCardData {
 
-  // qqq Max_outstanding_tx is received from the card
-  CAN_MSG          current_tx_message[DEMETER_MAX_OUTSTANDING_TX];
   unsigned int     max_outstanding_tx;
+  int              autoTxBufferCount;
+  int              autoTxBufferResolution;
 
   OS_IF_LOCK       replyWaitListLock;
   struct list_head replyWaitList;
@@ -122,6 +118,7 @@ typedef struct LeafCardData {
   unsigned char *         bulk_in_buffer;      // the buffer to receive data
   size_t                  bulk_in_size;        // the size of the receive buffer
   __u8                    bulk_in_endpointAddr;// the address of the bulk in endpoint
+// qqq, why is bulk_in_MaxPacketSize unsigned in Linux and signed otherwise?
 #if LINUX
   unsigned int            bulk_in_MaxPacketSize;
 #else
@@ -132,6 +129,8 @@ typedef struct LeafCardData {
   unsigned char *         bulk_out_buffer;     // the buffer to send data
 #endif
   size_t                  bulk_out_size;       // the size of the send buffer
+
+// qqq, why is bulk_out_MaxPacketSize unsigned in Linux and signed otherwise?
 #if LINUX
   unsigned int            bulk_out_MaxPacketSize;
 #else
@@ -156,26 +155,6 @@ typedef struct LeafCardData {
 } LeafCardData;
 
 
-int leaf_init_driver(void);
-int leaf_set_busparams(VCanChanData *vChd, VCanBusParams *par);
-int leaf_get_busparams(VCanChanData *vChd, VCanBusParams *par);
-int leaf_set_silent(VCanChanData *vChd, int silent);
-int leaf_set_trans_type(VCanChanData *vChd, int linemode, int resnet);
-int leaf_bus_on(VCanChanData *vChd);
-int leaf_bus_off(VCanChanData *vChd);
-int leaf_get_tx_err(VCanChanData *vChd);
-int leaf_get_rx_err(VCanChanData *vChd);
-int leaf_outstanding_sync(VCanChanData *vChan);
-int leaf_close_all(void);
-int leaf_proc_read(char *buf, char **start, off_t offset,
-                   int count, int *eof, void *data);
-int leaf_get_chipstate(VCanChanData *vChd);
-unsigned long leaf_get_time(VCanCardData *vCard);
-int leaf_flush_tx_buffer(VCanChanData *vChan);
-int leaf_schedule_send(VCanCardData *vCard, VCanChanData *vChan);
-unsigned long leaf_get_hw_rx_q_len(VCanChanData *vChan);
-unsigned long leaf_get_hw_tx_q_len(VCanChanData *vChan);
-int leaf_translate_and_send_message(VCanChanData *vChan, CAN_MSG *m);
 #if !LINUX
 int leaf_plugin(USBCAN_CONTEXT *usbcan_context);
 void leaf_remove(USBCAN_CONTEXT *usbcan_context);

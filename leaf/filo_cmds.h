@@ -22,6 +22,11 @@
 #   include "filo_private.h"
 #endif
 
+#if LINUX
+#   include <linux/types.h>
+#else
+typedef unsigned long uint32_t;
+#endif
 
 #define CMD_RX_STD_MESSAGE                12
 #define CMD_TX_STD_MESSAGE                13
@@ -275,6 +280,7 @@
 #define AUTOTXBUFFER_CMD_DEACTIVATE   4     // Dectivate a specific buffer
 #define AUTOTXBUFFER_CMD_SET_INTERVAL 5     // Set tx buffer transmission interval
 #define AUTOTXBUFFER_CMD_GENERATE_BURST 6   // Generate a burst of messages
+#define AUTOTXBUFFER_CMD_SET_MSG_COUNT 7    // Set tx buffer message count
 
 // CMD_SET_AUTO_TX_RESP bit values for automatic tx buffer capabilities
 #define AUTOTXBUFFER_CAP_TIMED_TX         0x01    // Periodic transmission
@@ -293,7 +299,7 @@
 
 #define LOG_FILE_MAJOR_VERSION 3     // Must fit in one byte
 #define LOG_FILE_MINOR_VERSION 0     // Must fit in one byte
-#define LOG_FILE_VERSION32 (((unsigned long)LOG_FILE_MAJOR_VERSION << 24)+((unsigned long)LOG_FILE_MINOR_VERSION << 16)) // Room for e.g. a build number
+#define LOG_FILE_VERSION32 (((uint32_t)LOG_FILE_MAJOR_VERSION << 24)+((uint32_t)LOG_FILE_MINOR_VERSION << 16)) // Room for e.g. a build number
 
 /*
  * Trigger types (used in TriggerEvent.type). This is a bit mask.
@@ -330,7 +336,7 @@ typedef struct {
 } cmdHead;
 
 
-//#define TIMESTAMP_AS_LONG(x) (*(unsigned long*) x.time)
+//#define TIMESTAMP_AS_LONG(x) (*(uint32_t*) x.time)
 
 /*
 ** Keep the following structs longword aligned (to allow for future
@@ -345,7 +351,7 @@ typedef struct {
     unsigned short time[3];
     unsigned char  dlc;
     unsigned char  timeOffset;
-    unsigned long  id;        // incl. CAN_IDENT_IS_EXTENDED
+    uint32_t       id;        // incl. CAN_IDENT_IS_EXTENDED
     unsigned char  data[8];
 } cmdLogMessage;
 
@@ -357,8 +363,8 @@ typedef struct
     unsigned char  trigNo;      // A bit mask showing which trigger was activated
     unsigned short time[3];
     unsigned short padding;
-    unsigned long  preTrigger;
-    unsigned long  postTrigger;
+    uint32_t       preTrigger;
+    uint32_t       postTrigger;
 } cmdLogTrigger;
 
 typedef struct
@@ -369,8 +375,16 @@ typedef struct
     unsigned char  verMinor;            // File version number
     unsigned short date;                // Real time date (YMD)
     unsigned short time;                // Real time time (HMS)
+    unsigned char  canDriverType0;      // Transceiver type for channel 0.
     unsigned char  canDriverType1;      // Transceiver type for channel 1.
-    unsigned char  padding[3];
+    unsigned char  hiresTimerFqMHz;     // High-resolution timer frequency, in MHz
+    unsigned char  hardwareType;        // Our HWTYPE_xxx.
+    unsigned short bitrate0L;           // Bit rate channel 0, low word
+    unsigned char  bitrate0H;           // Bit rate channel 0, high byte
+    unsigned char  padding1;
+    unsigned short bitrate1L;           // Bit rate channel 1, low word
+    unsigned char  bitrate1H;           // Bit rate channel 1, high byte
+    unsigned char  padding2;
 } cmdLogRtcTime;
 
 typedef struct { 
@@ -416,7 +430,7 @@ typedef struct {
     unsigned char cmdNo;
     unsigned char transId;
     unsigned char channel;
-    unsigned long bitRate;
+    uint32_t      bitRate;
     unsigned char tseg1;
     unsigned char tseg2;
     unsigned char sjw;
@@ -435,7 +449,7 @@ typedef struct {
     unsigned char cmdNo;
     unsigned char transId;
     unsigned char channel;
-    unsigned long bitRate;
+    uint32_t      bitRate;
     unsigned char tseg1;
     unsigned char tseg2;
     unsigned char sjw;
@@ -559,7 +573,7 @@ typedef struct {
     unsigned char cmdNo;
     unsigned char transId;
     unsigned char padding;
-    unsigned long results;
+    uint32_t      results;
 } cmdSelfTestResp;
 
 typedef struct {
@@ -575,7 +589,7 @@ typedef struct {
     unsigned char transId;
     unsigned char reserved0;      // Unused right now
     unsigned char pcb_id[24];
-    unsigned long oem_unlock_code;
+    uint32_t      oem_unlock_code;
 } cmdGetCardInfo2Resp;
 
 typedef struct {
@@ -590,10 +604,10 @@ typedef struct {
     unsigned char cmdNo;        
     unsigned char transId;      
     unsigned char channelCount; 
-    unsigned long serialNumber; 
-    unsigned long padding1;       // Unused right now
-    unsigned long clockResolution;
-    unsigned long mfgDate;
+    uint32_t      serialNumber; 
+    uint32_t      padding1;       // Unused right now
+    uint32_t      clockResolution;
+    uint32_t      mfgDate;
     unsigned char EAN[8];         // LSB..MSB, then the check digit.
     unsigned char hwRevision;
     unsigned char usbHsMode;
@@ -612,7 +626,7 @@ typedef struct {
     unsigned char cmdNo;
     unsigned char transId;
     unsigned char channel;
-    unsigned long channelCapabilities;
+    uint32_t      channelCapabilities;
     unsigned char canChipType;
     unsigned char canChipSubType;
     unsigned short  padding;
@@ -630,11 +644,11 @@ typedef struct {
     unsigned char cmdNo;
     unsigned char transId;
     unsigned char padding0;
-    unsigned long  swOptions;
-    unsigned long  firmwareVersion;
+    uint32_t      swOptions;
+    uint32_t      firmwareVersion;
     unsigned short maxOutstandingTx;
     unsigned short padding1;      // Currently unused
-    unsigned long padding[4];     // Currently unused
+    uint32_t      padding[4];     // Currently unused
 } cmdGetSoftwareInfoResp;
 
 typedef struct {
@@ -674,8 +688,8 @@ typedef struct {
     unsigned char cmdNo;
     unsigned char transId;
     unsigned char padding;
-    unsigned long licenseMask;
-    unsigned long kvaserLicenseMask;
+    uint32_t      licenseMask;
+    uint32_t      kvaserLicenseMask;
 } cmdCheckLicenseResp;
 
 typedef struct {
@@ -765,9 +779,9 @@ typedef struct {
     unsigned short fat_type;                // 12 or 16 depending on FAT type.
     unsigned short dir_entries;             // Number of directory entries in the root dir
     unsigned short cluster_size;            // Two-logarithm of the cluster size in sectors
-    unsigned long  fat1_start;              // First FAT starts in this sector
-    unsigned long  first_data_sector;       // First sector available for data
-    unsigned long  last_data_sector;  
+    uint32_t       fat1_start;              // First FAT starts in this sector
+    uint32_t       first_data_sector;       // First sector available for data
+    uint32_t       last_data_sector;  
 } cmdMemoGetFilesystemInfoStructResp;
 
 typedef struct {
@@ -784,8 +798,8 @@ typedef struct {
     unsigned char product_revision;
     unsigned char oem_id[2];
     char          product_name[10];
-    unsigned long m_id;
-    unsigned long serial_number;
+    uint32_t      m_id;
+    uint32_t      serial_number;
     unsigned short date_code;
     unsigned short padding;
 } cmdMemoGetDiskInfoStructResp;
@@ -816,7 +830,7 @@ typedef struct {
     unsigned short wr_blk_size;
     unsigned short trans_speed;
 
-    unsigned long data_size;
+    uint32_t      data_size;
 } cmdMemoGetDiskHWInfoStructResp;
 
 
@@ -855,7 +869,7 @@ typedef struct {
     unsigned char cmdNo;
     unsigned char transId;
     unsigned char subCmd;
-    unsigned long dataChunkReqNo;
+    uint32_t      dataChunkReqNo;
 } cmdMemoReadConfigReq;
 
 typedef struct {
@@ -971,7 +985,7 @@ typedef struct {
     unsigned char subCmd;
     unsigned short freq;
     unsigned short duration;
-    unsigned long padding[2];    
+    uint32_t      padding[2];    
 }  cmdSound;
     
 
@@ -980,7 +994,7 @@ typedef struct {
     unsigned char   cmdNo;
     unsigned char   transId;
     unsigned char   portNo;             // Hardware-specific port #
-    unsigned long   portVal;            // Hardware-specific port value
+    uint32_t        portVal;            // Hardware-specific port value
 } cmdSetIoPortsReq;
 
 typedef struct {
@@ -995,8 +1009,8 @@ typedef struct {
     unsigned char   cmdNo;
     unsigned char   transId;
     unsigned char   portNo;             // Hardware-specific port #
-    unsigned long   portVal;            // Hardware-specific port value
-    unsigned long   padding;
+    uint32_t        portVal;            // Hardware-specific port value
+    uint32_t        padding;
     unsigned short  status;
     unsigned short  padding2;
 } cmdGetIoPortsResp;
@@ -1006,8 +1020,8 @@ typedef struct {
   unsigned char cmdNo;
   unsigned char transId;
   unsigned char subCmd;
-  unsigned long sectorNo;
-  unsigned long dataChunkReqNo;
+  uint32_t      sectorNo;
+  uint32_t      dataChunkReqNo;
 } cmdMemoReadSectorReq;
 
 typedef struct {
@@ -1026,7 +1040,7 @@ typedef struct {
   unsigned char cmdNo;
   unsigned char transId;
   unsigned char subCmd;
-  unsigned long sectorNo;
+  uint32_t      sectorNo;
   unsigned char data[CONFIG_DATA_CHUNK];
 } cmdMemoWriteSectorReq;
 
@@ -1044,8 +1058,8 @@ typedef struct {
   unsigned char cmdNo;
   unsigned char transId;
   unsigned char subCmd;
-  unsigned long sectorNo;
-  unsigned long count;
+  uint32_t      sectorNo;
+  uint32_t      count;
 } cmdMemoEraseSectorReq;
 
 typedef struct {
@@ -1070,7 +1084,7 @@ typedef struct {
   unsigned char cmdNo;
   unsigned char transId;
   unsigned char channel;
-  unsigned long transceiverCapabilities;
+  uint32_t      transceiverCapabilities;
   unsigned char transceiverStatus;
   unsigned char transceiverType;
   unsigned char padding[2];
@@ -1109,7 +1123,7 @@ typedef struct {
   unsigned char  cmdNo;
   unsigned char  requestType;
   unsigned char  channel;       // For certain requests only
-  unsigned long  interval;      // D:o
+  uint32_t       interval;      // D:o
   unsigned char  bufNo;         // D:o
   unsigned char  padding[3];
 } cmdAutoTxBufferReq;
@@ -1119,7 +1133,7 @@ typedef struct {
   unsigned char  cmdNo;
   unsigned char  responseType;
   unsigned char  bufferCount;
-  unsigned long  timerResolution;
+  uint32_t       timerResolution;
   unsigned short capabilities;
   unsigned short padding0;
 } cmdAutoTxBufferResp;

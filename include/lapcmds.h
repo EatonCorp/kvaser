@@ -272,7 +272,7 @@
 /*
 ** lapcan timestamp clock
 */
-#define LAPCAN_TICKS_PER_MS              125
+#define LAPCAN_US_PER_TICK               8
 
 /*
 ** Other transceiver flags.

@@ -15,7 +15,11 @@
 
 #include <osif_common.h>
 
-#include <sys/ioctl.h>
+#if LINUX
+#   include <sys/ioctl.h>
+#else //WIN32
+
+#endif
 
 int addFilter (OS_IF_FILE_HANDLE fd,
            unsigned int cmdNr,  int cmdNrMask,

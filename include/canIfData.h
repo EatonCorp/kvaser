@@ -1,5 +1,5 @@
 /*
-** Copyright 2002-2006 KVASER AB, Sweden.  All rights reserved.
+** Copyright 2002-2009 KVASER AB, Sweden.  All rights reserved.
 */
 
 #ifndef _CANIF_DATA_H_
@@ -44,5 +44,24 @@ typedef struct {
     unsigned long extMask;
     unsigned char typeBlock;
 } VCanMsgFilter;
+
+typedef struct {
+  unsigned int buffer_number;
+  unsigned int acc_code;
+  unsigned int acc_mask;
+  unsigned int flags;
+  unsigned int type;
+  unsigned int period;
+//  unsigned int reserved[16];      // For future usage
+} KCanObjbufAdminData;
+
+
+typedef struct {
+  unsigned int buffer_number;
+  unsigned int id;
+  unsigned int dlc;
+  unsigned char data[8];
+  unsigned int flags;
+} KCanObjbufBufferData;
 
 #endif /* _CANIF_DATA_H_ */

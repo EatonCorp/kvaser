@@ -66,6 +66,7 @@ typedef enum {
 #define canEVENT_TX             32001       // Transmit event
 #define canEVENT_ERROR          32002       // Error event
 #define canEVENT_STATUS         32003       // Change-of-status event
+#define canEVENT_ENVVAR         32004       // Change-of- envvar
 
 //
 // These are used in the call to canSetNotify().
@@ -75,6 +76,7 @@ typedef enum {
 #define canNOTIFY_TX            0x0002      // Notify on transmit
 #define canNOTIFY_ERROR         0x0004      // Notify on error
 #define canNOTIFY_STATUS        0x0008      // Notify on (some) status changes
+#define canNOTIFY_ENVVAR        0x0010      // Notify on Envvar change
 
 //
 // Circuit status flags.

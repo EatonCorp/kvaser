@@ -8,7 +8,10 @@
 //  Simple linked list
 //********************************************
 #include "linkedlist.h"
-#include "osif_common.h"
+
+#if !defined(OS_IF_INLINE)
+# define OS_IF_INLINE
+#endif
 
 
 //======================================================================
@@ -19,8 +22,9 @@ int listInsertFirst (LinkedList **listPtrPtr, void *elem)
   LinkedList *newNode;
 
   newNode = malloc(sizeof(LinkedList));
-  if (newNode == NULL)
+  if (newNode == NULL) {
     return -1;
+  }
   newNode->elem = elem;
   newNode->elem = elem;
   newNode->next = *listPtrPtr;

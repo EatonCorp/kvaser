@@ -6,54 +6,33 @@ KBASE:=/lib/modules/$(shell uname -r)
 KDIR:=$(KBASE)/build
 KSOURCE:=$(KBASE)/source
 
-headers_common:= \
-  canIfData.h \
-  debug.h \
-  hwnames.h \
-  module_versioning.h \
-  osif_common.h \
-  osif_functions_kernel.h \
-  osif_kernel.h \
-  poppack.h \
-  pshpack1.h \
-  queue.h \
-  vcanevt.h \
-  vcan_ioctl.h \
-  VCanOsIf.h \
-
-headers:= \
-  filo_cmds.h \
-  leafHWIf.h \
-  $(headers_common) \
-
-srcs_common:= \
-  osif_functions_kernel.c \
-  queue.c \
-  VCanOsIf.c \
-
+ifneq ($(KERNELRELEASE),)
 srcs:= \
   leafHWIf.c \
-  $(srcs_common) \
+  ../common/objbuf.c \
+  ../common/osif_functions_kernel.c \
+  ../common/queue.c \
+  ../common/VCanOsIf.c \
 
-ifneq ($(KERNELRELEASE),)
 objs:= $(patsubst %.c,%.o,$(srcs))
 
 
 obj-m:=$(MODULE_NAME).o
 $(MODULE_NAME)-y:=$(objs)
-ccflags-y:=-DLINUX=1 -DDEBUG=0 -DLINUX_2_6 -DWIN32=0
+ccflags-y:= \
+  -DLINUX=1 \
+  -D_LINUX=1 \
+  -DDEBUG=0 \
+  -D_DEBUG=0 \
+  -DLINUX_2_6 \
+  -DWIN32=0 \
+  -I$(src)/../include/ \
 
 else
 .PHONY: all
 all: leaf.ko
 
-$(headers_common):
-	for file in $(headers_common); do ln -sf ../include/$$file; done
-
-$(srcs_common):
-	for file in $(srcs_common); do ln -sf ../common/$$file; done
-
-leaf.ko: $(srcs) $(headers)
+leaf.ko:
 	$(MAKE) -C $(KDIR) M=$(PWD)
 
 .PHONY: install
@@ -66,7 +45,6 @@ install: leaf.ko
 
 .PHONY: clean
 clean:
-	-rm $(headers_common) $(srcs_common)
 	$(MAKE) -C $(KDIR) M=$(PWD) clean
 
 endif

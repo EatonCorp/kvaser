@@ -9,6 +9,16 @@
 #ifndef VCANEVT_H
 #define VCANEVT_H
 
+#if LINUX
+#   if !defined(__KERNEL__)
+#      include <stdint.h>
+#   else
+#      include <linux/types.h>
+#   endif
+#else
+typedef unsigned long uint32_t;
+#endif
+
 /***************************************************************************/
 
 #include <pshpack1.h>
@@ -51,7 +61,7 @@ typedef unsigned char VeventTag;
 #define VCAN_MSG_FLAG_TXRQ          0x80  /* Transmit Message stored into Controller  */
 
 struct s_vcan_msg {  /* 14 Bytes */
-         unsigned long id;
+         uint32_t      id;
          unsigned char flags;
          unsigned char dlc;
          unsigned char data[MAX_MSG_LEN];
@@ -74,18 +84,18 @@ struct s_vcan_chip_state {
 
 /* Structure for V_STATISTIC_STD */
 struct s_vcan_statistic_std {
-         unsigned long  stdData;
-         unsigned long  stdRemote;
-         unsigned long  errFrame;
+         uint32_t       stdData;
+         uint32_t       stdRemote;
+         uint32_t       errFrame;
          unsigned short busLoad; // 0.00-100.00%
        };
 
 
 /* Structure for V_STATISTIC_EXT */
 struct s_vcan_statistic_ext {
-         unsigned long  extData;
-         unsigned long  extRemote;
-         unsigned long  ovrFrame;
+         uint32_t extData;
+         uint32_t extRemote;
+         uint32_t ovrFrame;
        };
 
 
@@ -146,13 +156,9 @@ union s_vcan_tag_data {
 struct s_vcan_event {
          VeventTag     tag;             // 1
          unsigned char chanIndex;       // 1
-#if LINUX
          unsigned char transId;         // 1
-#else
-         unsigned char chanId;          // 1
-#endif
          unsigned char unused_1;        // 1 internal use only !!!!
-         unsigned long timeStamp;       // 4
+         uint32_t      timeStamp;            // 4
          union s_vcan_tag_data
                        tagData;         // 14 Bytes (_VMessage)
        };
@@ -167,8 +173,8 @@ typedef struct s_can_msg {
           unsigned char channel_index;
           unsigned char user_data;
           unsigned char unused_1;
-          unsigned long timestamp;
-          unsigned long id;
+          uint32_t      timestamp;
+          uint32_t      id;
           unsigned char flags;
           unsigned char length;
           unsigned char data [8];
