@@ -1,0 +1,14 @@
+The linux developer kit from www.kvaser.com does not work well
+with the latest linux kernels.  Also, at Eaton, we are only using
+the Kvaser Leaf/LeafLight, so controlling the code for all the 
+other interfaces is unnecessary.  This repo contains the 'canlib'
+library and 'kvaser leaf' drivers from www.kvaser.com and have been
+modified to build/install on the latest linux kernels (including
+kernel 3.0).
+
+use the linux standard commands to build and install
+
+$ make
+... then as root ...
+# make install
+
