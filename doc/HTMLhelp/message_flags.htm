@@ -1,0 +1,46 @@
+<!doctype html public "-//w3c//dtd html 4.0 transitional//en">
+<HTML>
+<HEAD>
+    <META HTTP-EQUIV="Content-Type" Content="text/html; charset=iso-8859-1">
+    <title>Message Flags</title>
+    <link rel="stylesheet" type="text/css" href="canlib.css">
+</HEAD>
+
+<BODY>
+<img SRC="tux.png" ALT="linux" NOSAVE height=39 width=92 align=RIGHT>
+<h3>Message Flags</h3>
+
+<p>
+The following flags can be returned from canRead() et al, 
+or passed to canWrite(). Note that you can combine one or more flags.
+<p>
+
+<table width="100%">
+<tr><th>Flag</th><th>Meaning</th></tr>
+<tr><td>canMSG_RTR</td><td>Message is a remote request</td></tr>
+<tr><td>canMSG_STD</td><td>Message has a standard (11-bit) identifier</td></tr>
+<tr><td>canMSG_EXT</td><td>Message has a extended (29-bit) identifier</td></tr>
+<tr><td>canMSG_ERROR_FRAME</td><td>Message represents an error frame.</td></tr>
+</table>
+
+
+<p>
+The following flags can be returned from canRead() et al, but can not
+be passed to canWrite():
+<table width="100%">
+<tr><th>Flag</th><th>Meaning</th></tr>
+<tr><td>canMSGERR_HW_OVERRUN</td><td>Hardware buffer overrun.</td></tr>
+<tr><td>canMSGERR_SW_OVERRUN</td><td>Software buffer overrun.</td></tr>
+</table>
+
+<p>
+Note 1: Other canMSG_xxx and canMSGERR_xxx flags are reserved and must
+be zero when calling canWrite().
+
+<p>Note 2: Not all hardware platforms can detect the difference between
+hardware overruns and software overruns, so your application should
+test for both conditions. You can use the symbol canMSGERR_OVERRUN
+for this purpose.
+
+</BODY>
+</HTML>

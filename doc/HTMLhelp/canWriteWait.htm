@@ -1,0 +1,96 @@
+<!doctype html public "-//w3c//dtd html 4.0 transitional//en">
+<HTML>
+<HEAD>
+    <META HTTP-EQUIV="Content-Type" Content="text/html; charset=iso-8859-1">
+    <title>canWrite</title>
+    <link rel="stylesheet" type="text/css" href="canlib.css">
+</HEAD>
+
+<BODY>
+<img SRC="tux.png" ALT="linux" NOSAVE height=39 width=92 align=RIGHT>
+<h3>canWriteWait</h3><p>
+
+<h5 class=topich>Syntax</h5><p>
+<table width="100%"><TR><TD><pre><code>
+#include &lt;canlib.h&gt;
+canStatus <b>canWriteWait</b>(
+    int handle, long id, 
+    void* msg, unsigned int dlc, 
+    unsigned int flag, long timeout);
+</code></pre></TD></TR></TABLE>
+
+<div class=topich>
+<h5 class=topich>Description</h5><p>
+This function sends a CAN message. The call returns 
+after queuing the message to the driver. 
+If the queue is full, the call waits at most timeout milliseconds. 
+If the queue is still full, canERR_TXBUFOFL is returned.
+</div>
+
+<div class=topich>
+<h5 class=topich>Input Parameters</h5><p>
+<dl>
+<dt><i>handle</i></dt>
+<dd>A handle to an open CAN circuit.</dd>
+</dl>
+
+<dl>
+<dt><i>id</i></dt>
+<dd>The identifier of the CAN message to send.</dd>
+</dl>
+
+<dl>
+<dt><i>msg</i></dt>
+<dd>A pointer to the message data, or NULL.</dd>
+</dl>
+
+<dl>
+<dt><i>dlc</i></dt>
+<dd>The length of the message. Can be at most 8.</dd>
+</dl>
+
+<dl>
+<dt><i>timeout</i></dt>
+<dd>Maximum number of milliseconds to wait before returning canERR_TXBUFOFL.
+-1 means wait indefinitly
+</dd>
+</dl>
+
+<dl>
+<dt><i>flag</i></dt>
+<dd>A combination of message flags, 
+<A HREF="message_flags.htm">canMSG_xxx</A>.
+Use this parameter to send extended (29-bit) frames and/or remote frames.
+Use canMSG_EXT and/or canMSG_RTR for this purpose.
+</dd>
+</dl>
+</div>
+
+<div class=topich>
+<h5 class=topich>Output Parameters</h5><p>
+None.
+</div>
+
+
+<div class=topich>
+<h5 class=topich>Return Value</h5><p>
+<A HREF="errcodes.htm">canOK</A> (zero) if success<BR>
+<A HREF="errcodes.htm">canERR_xxx</A> (negative) if failure.<BR>
+</div>
+
+<div class=note>
+<h5 class=note><B>Notes</B></h5><p>
+<ul>
+<li>The message has been <i>queued</i> for transmission when this calls
+return. It has not necessarily been sent.</li>
+</ul>
+</div>
+
+<div class=relh>
+<h5 class=relh><B>Related Topics</B></h5>
+<p><A HREF="canWrite.htm">canWrite</A>
+<p>
+</div>
+
+</BODY>
+</HTML>

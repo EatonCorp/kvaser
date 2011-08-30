@@ -1,0 +1,140 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<HTML>
+<HEAD>
+    <META HTTP-EQUIV="Content-Type" Content="text/html; charset=Windows-1252">
+    <title>canSetNotify</title>
+    <link rel="stylesheet" type="text/css" href="canlib.css">
+</HEAD>
+
+<BODY>
+
+<img SRC="tux.png" ALT="linux" NOSAVE height=39 width=92 align=RIGHT>
+<h3>canSetNotify</h3><p>
+
+<h5 class=topich>Syntax</h5><p>
+<table width="100%"><TR><TD><pre><code>
+#include &lt;canlib.h&gt;
+
+canStatus <b>canSetNotify</b> canSetNotify (const CanHandle hnd,
+                                     void (*callback) (canNotifyData *), 
+                                     unsigned int notifyFlags, void * tag);
+
+</code></pre></TD></TR></TABLE>
+
+<div class=topich>
+<h5 class=topich>Description</h5><p>
+This function allows a user-defined function to be called when certain events occur on the bus. 
+</div>
+
+<div class=topich>
+<h5 class=topich>Input Parameters</h5><p>
+<dl>
+<dt><i>handle</i></dt>
+<dd>A handle to an open CAN circuit.</dd>
+</dl>
+
+<dl>
+<dt><i>callback</i></dt>
+<dd>Function to be called when an event occurs</dd>
+</dl>
+
+<dl><dt><i>notifyFlags</i></dt>
+<dd>The events for which notification messages are to be sent. 
+This value is zero, meaning that no event notification is to occur,
+or a combination of any of the following constants:
+
+<table>
+<TR><TD>canNOTIFY_RX</TD><TD>CAN message reception notification.</TD></TR>
+<TR><TD>canNOTIFY_TX</TD><TD>CAN message transmission notification.</TD></TR>
+<TR><TD>canNOTIFY_ERROR</TD><TD>CAN bus error notification.</TD></TR>
+<TR><TD>canNOTIFY_STATUS</TD><TD>CAN chip status change.</TD></TR>
+</TABLE>
+</dd></dt></dl>
+
+<dl>
+<dt><i>tag</i></dt>
+<dd>Pointer to user defined data. Passed to callback in the canNotifyData struct.</dd>
+</dl>
+
+</div>
+
+<div class=topich>
+<h5 class=topich>Output Parameters</h5><p>
+None.
+</div>
+
+
+<div class=topich>
+<h5 class=topich>Return Value</h5><p>
+<A HREF="errcodes.htm">canOK</A> (zero) if success<BR>
+<A HREF="errcodes.htm">canERR_xxx</A> (negative) if failure.<BR>
+</div>
+
+<div class=topich>
+<h5 class=topich>The notification message</h5><p>
+
+When one of the above events take place, the 'callback function is called with a canNotityData struct 
+as an argument which looks like: 
+<p>
+<code><pre>
+typedef struct canNotifyData {
+  void *tag;
+  int eventType;
+  union {
+    struct {
+      unsigned long time;
+    } busErr;
+    struct {
+      long id;
+      unsigned long time;
+    } rx;
+    struct {
+      long id;
+      unsigned long time;
+    } tx;
+    struct {
+      unsigned char busStatus;
+      unsigned char txErrorCounter;
+      unsigned char rxErrorCounter;
+      unsigned long time; 
+    } status;
+  } info;
+} canNotifyData;
+</pre></code>
+<p>
+The 'info' field in the struct is a <b>union</b> that depends on eventType as follows:<br>
+
+<p>
+<table>
+<tr><td>canEVENT_RX</td><td>A CAN message has been received. <br> 
+The struct info.rx contains the id and reception time of the received message. 
+</td></tr>
+<tr><td>canEVENT_TX</td><td>A CAN message has been transmitted.<br>
+The struct info.tx contains the id and transmission time of the transmitted message. 
+</td></tr>
+<tr><td>canEVENT_ERROR</td><td>A CAN bus error is reported by the CAN controller<br>
+The struct info.busErr contains the time the error was detected. 
+</td></tr>
+<tr><td>canEVENT_STATUS</td><td>The CAN controller changes state<br>
+The struct info.status contains busstatus, transmit and receive errorcounters and time of the statechange. 
+</td></tr>
+</table>
+<p>
+
+
+The tag field in canNotifyData is a void pointer. This can be used as a reference to some data associated with a specific channel/handle. 
+
+</div>
+
+<div class=relh>
+<h5 class=relh><B>Related Topics</B></h5><p>
+<A HREF="code_examples.htm#canSetNotify">An example.</a>
+</div>
+
+
+</BODY>
+</HTML>
+
+
+
+

@@ -1,0 +1,59 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<HTML>
+<HEAD>
+    <META HTTP-EQUIV="Content-Type" Content="text/html; charset=Windows-1252">
+    <title>canWriteSync</title>
+    <link rel="stylesheet" type="text/css" href="canlib.css">
+</HEAD>
+
+<BODY>
+<img SRC="tux.png" ALT="linux" NOSAVE height=39 width=92 align=RIGHT>
+<h3>canWriteSync</h3><p>
+
+<h5 class=topich>Syntax</h5><p>
+<table width="100%"><TR><TD><pre><code>
+#include &lt;canlib.h&gt;
+canStatus <b>canWriteSync</b>(int handle, unsigned long timeout);
+</code></pre></TD></TR></TABLE>
+
+<div class=topich>
+<h5 class=topich>Description</h5><p>
+Waits until all CAN messages for the specified handle are sent, or
+the timeout period expires.
+</div>
+
+<div class=topich>
+<h5 class=topich>Input Parameters</h5><p>
+<dl>
+<dt><i>handle</i></dt>
+<dd>A handle to an open CAN circuit.</dd>
+</dl>
+
+<dl>
+<dt><i>timeout</i></dt>
+<dd>The timeout in milliseconds.</dd>
+</dl>
+</div>
+
+<div class=topich>
+<h5 class=topich>Output Parameters</h5><p>
+None.
+</div>
+
+
+<div class=topich>
+<h5 class=topich>Return Value</h5><p>
+<A HREF="errcodes.htm">canOK</A> (zero) if the queue emptied before
+the timeout period came to its end.<BR>
+<A HREF="errcodes.htm">canERR_TIMEOUT</A> (negative) not all messages
+were transmitted when the timeout occurred.<BR>
+<A HREF="errcodes.htm">canERR_xxx</A> (negative) if failure.<BR>
+</div>
+
+<div class=relh>
+<h5 class=relh><B>Related Topics</B></h5><p>
+<A HREF="canWrite.htm">canWrite</A>
+</div>
+
+</BODY>
+</HTML>

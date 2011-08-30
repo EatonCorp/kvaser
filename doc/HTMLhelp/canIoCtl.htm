@@ -1,0 +1,101 @@
+<!doctype html public "-//w3c//dtd html 4.0 transitional//en">
+<HTML>
+<HEAD>
+    <META HTTP-EQUIV="Content-Type" Content="text/html; charset=iso-8859-1">
+    <title>canIoCtl</title>
+    <link rel="stylesheet" type="text/css" href="canlib.css">
+</HEAD>
+
+<BODY>
+<img SRC="tux.png" ALT="linux" NOSAVE height=39 width=92 align=RIGHT>
+<h3>canIoCtl</h3><p>
+
+<h5 class=topich>Syntax</h5><p>
+<table width="100%"><TR><TD><pre><code>
+#include &lt;canlib.h&gt;
+canStatus <b>canIoCtl</b>(int handle, 
+    unsigned int func, 
+    void* buf, 
+    unsigned int buflen);
+</code></pre></TD></TR></TABLE>
+
+<div class=topich>
+<h5 class=topich>Description</h5><p>
+This API call performs several different functions; these are described below.
+</div>
+
+<div class=topich>
+<h5 class=topich>Input Parameters</h5><p>
+<dl><dt><i>handle</i></dt>
+<dd>A handle to an open circuit.</dd>
+</dl>
+
+<dl><dt><i>func</i></dt>
+<dd>A canIOCTL_xxx function code (described below.)</dd>
+</dl>
+
+<dl><dt><i>buf</i></dt>
+<dd>Pointer to a buffer containing function-dependent data; 
+or a NULL pointer for certain function codes.</dd>
+</dl>
+
+<dl><dt><i>buflen</i></dt>
+<dd>The length of the buffer.</dd>
+</dl>
+
+</div>
+
+<div class=topich>
+<h5 class=topich>Output Parameters</h5><p>
+The contents of the buffer after the call is dependent on the function
+code you specified.
+
+</div>
+
+
+<div class=topich>
+<h5 class=topich>Function Codes</h5><p>
+<TABLE>
+<tr><th>Value</th><th>Meaning</th><tr>
+
+<TR>
+<TD>canIOCTL_GET_RX_BUFFER_LEVEL</TD>
+<TD>buf points at a DWORD which receives the current RX queue level. 
+The returned value is approximative.
+</TD>
+</TR>
+
+<TR>
+<TD>canIOCTL_GET_TX_BUFFER_LEVEL</TD>
+<TD>buf points at a DWORD which receives the current TX queue level. 
+The returned value is approximative.
+</TD>
+</TR>
+
+<TR>
+<TD>canIOCTL_FLUSH_RX_BUFFER</TD>
+<TD>Discard the current contents of the RX queue. The values of buf and buflen 
+are ignored.
+</TD>
+</TR>
+
+<TR>
+<TD>canIOCTL_FLUSH_TX_BUFFER</TD>
+<TD>Discard the current contents of the TX queue. The values of buf and buflen 
+are ignored.
+</TD>
+</TR>
+
+</TABLE>
+
+</div>
+
+<div class=topich>
+<h5 class=topich>Return Value</h5><p>
+<A HREF="errcodes.htm">canOK</A> (zero) if success<BR>
+<A HREF="errcodes.htm">canERR_xxx</A> (negative) if failure.<BR>
+</div>
+
+
+</BODY>
+</HTML>

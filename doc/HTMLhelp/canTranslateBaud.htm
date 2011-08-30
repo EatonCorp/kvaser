@@ -1,0 +1,93 @@
+<!doctype html public "-//w3c//dtd html 4.0 transitional//en">
+<HTML>
+<HEAD>
+    <META HTTP-EQUIV="Content-Type" Content="text/html; charset=iso-8859-1">
+    <title>canTranslateBaud</title>
+    <link rel="stylesheet" type="text/css" href="canlib.css">
+</HEAD>
+
+<BODY>
+<img SRC="tux.png" ALT="linux" NOSAVE height=39 width=92 align=RIGHT>
+<h3>canTranslateBaud</h3><p>
+
+<h5 class=topich>Syntax</h5><p>
+<table width="100%"><TR><TD><pre><code>
+#include &lt;canlib.h&gt;
+canStatus <b>canTranslateBaud</b>(
+    long *freq, int *tseg1, 
+    int *tseg2, int *sjw,
+    int *nosamp, int *syncMode);
+</code></pre></TD></TR></TABLE>
+
+<div class=topich>
+<h5 class=topich>Description</h5><p>
+
+This function translates the BAUD_xxx constants to their
+corresponding bus parameter values.<p>
+
+TSeg1 is the number of quanta (less one) in a bit before the sampling
+point. TSeg2 is the number of quanta after the sampling point.
+
+</div>
+
+<div class=topich>
+<h5 class=topich>Input/Output Parameters</h5><p>
+<dl>
+<dt><i>freq</i></dt>
+<dd>A pointer to a DWORD which contains the BAUD_xxx constant to translate.
+At return, this DWORD contains the actual bit rate (in bits per second).</dd>
+</dl>
+
+<dl>
+<dt><i>
+tseg1
+</i></dt>
+<dd>A pointer to a buffer which receives the Time segment 1, that is, the number of quanta
+from (but not including) the Sync Segment to the sampling point.</dd>
+</dl>
+
+<dl>
+<dt><i>
+tseg2
+</i></dt>
+<dd>A pointer to a buffer which receives the Time segment 2, that is, the number of quanta 
+from the sampling point to the end of the bit.</dd>
+</dl>
+
+<dl>
+<dt><i>
+sjw
+</i></dt>
+<dd>A pointer to a buffer which receives the Syncronization Jump Width; can be 1,2,3, or 4.</dd>
+
+</dl>
+<dl>
+<dt><i>
+noSamp
+</i></dt>
+<dd>A pointer to a buffer which receives the number of sampling points; can be 1 or 3.</dd>
+</dl>
+
+<dl>
+<dt><i>
+syncmode
+</i></dt>
+<dd>Unsupported, always read as zero.</dd>
+</dl>
+
+</div>
+
+
+<div class=topich>
+<h5 class=topich>Return Value</h5><p>
+<A HREF="errcodes.htm">canOK</A> (zero) if success<BR>
+<A HREF="errcodes.htm">canERR_xxx</A> (negative) if failure.<BR>
+</div>
+
+<div class=relh>
+<h5 class=relh><B>Related Topics</B></h5><p>
+<A HREF="canSetBusParams.htm">canSetBusParams</A>
+</div>
+
+</BODY>
+</HTML>

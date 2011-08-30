@@ -1,0 +1,168 @@
+body 		
+	{  
+	background-color: #ffffff; 
+	font-size: 85%;
+	font-family: Verdana, Arial, Helvetica, sans-serif;	
+	}
+
+a:link
+	{
+	background: transparent; 
+	color: #000099;
+	} 
+
+a:visited
+	{  
+	color: #996699;
+	}
+
+a:active
+	{
+	color: #999999;
+	}
+
+p	
+	{ 
+	margin-bottom: -.75em;	
+	}	
+
+/* ---------------- lists &c. ---------------- */
+
+
+li p
+	{
+	margin-top: .75em;
+	margin-bottom: 1.25em;	
+	}	
+
+li
+	{
+	margin-left: -.25in;
+	}	 
+
+ol li	
+	{
+	margin-left: -.15in;
+	} 
+
+ul
+	{
+	list-style: disc;
+	}
+
+ul.onestep
+	{
+	list-style: disc;
+	}
+
+
+/* ---------------- code &c. ---------------- */
+
+
+code	{ font-family: Courier New, Courier; font-size: 100%; }
+
+pre		{ font-family: Courier New, Courier; font-size: 100%; }
+
+/* -------------- tables 'n' stuff -------------- */
+
+
+table 	{ font-size: 100%;
+		text-align: left;
+		margin-top: 0em;
+		}
+
+tr		{ margin: .25em;
+		vertical-align: top;
+		}
+			
+th 		{ text-align: left;
+		margin: .25em;
+		vertical-align: top;
+		background: #dddddd;
+		}
+						
+td		{ margin: .25em;
+		background: #e0e0ff;
+		vertical-align: top;
+		}
+
+
+/* -------------- headings 'n' stuff -------------- */
+
+h1          {font-size: 200%;
+            }
+
+h5			{font-size: 100%;
+			}
+
+
+	/* -- subheading -- */
+
+h5.subh		{ margin-bottom: -1.5em;
+			margin-top: 2em;
+			}
+
+	/* -- procedure heading -- */
+
+h5.proch		{ margin-bottom: -1em;
+			}
+
+	/* -- topic heading -- */
+
+h5.topich		{ margin-bottom: -1em;
+			}
+
+	/* -- note 'n' tip heading -- */
+
+h5.note		{ margin-top: 2em;
+			margin-bottom: -1em;
+			}
+
+	/* -- related topics heading -- */
+
+h5.relh		{ margin-top: 2.75em;
+			margin-bottom: -1em;
+			}
+
+/* -------------- miscellany 'n' stuff -------------- */
+
+/* intended to applied with <div></div> tags to groups of links */
+
+.dectree	{ margin-left: 1.33em;
+		margin-top: 1.5em;
+		}
+
+dectree p 	{ margin-top: 1.25em;
+		}
+
+
+.reltopics		{ 
+			{
+			
+p.reltopics 	{ margin-left: 3em; 
+			}
+			
+img.logo 	{ position:relative; left: -4px; 
+			}
+
+/* -------------- part opening table styles ------------- */
+
+.open		{ background: #ffffff;
+		margin: 0em; font-size: 2em;
+		}
+
+/* note: font-weight: 400 is normal, 700 is bold. We're trying for something a bit less bold than 700. */
+.openprod	{ background: #ffffff;
+		font-family: Verdana, Arial, Helvetica, MS Sans Serif, sans-serif;
+		font-size: 1.25em;
+		font-weight: 600;
+		margin: 0em;
+		padding: 0em;
+		}
+					
+.openhelp	{ font-family: Verdana, Arial, Helvetica, MS Sans Serif, sans-serif;
+		font-size: 2em;
+		background: #cccccc;
+		padding: .5em;
+		}
+

@@ -1,0 +1,90 @@
+<!doctype html public "-//w3c//dtd html 4.0 transitional//en">
+<HTML>
+<HEAD>
+    <META HTTP-EQUIV="Content-Type" Content="text/html; charset=iso-8859-1">
+    <title>canSetBusOutputControl</title>
+    <link rel="stylesheet" type="text/css" href="canlib.css">
+</HEAD>
+
+<BODY>
+<img SRC="tux.png" ALT="linux" NOSAVE height=39 width=92 align=RIGHT>
+<h3>canSetBusOutputControl</h3><p>
+
+<h5 class=topich>Syntax</h5><p>
+<table width="100%"><TR><TD><pre><code>
+#include &lt;canlib.h&gt;
+canStatus <b>canSetBusOutputControl</b>(int handle, unsigned int drivertype);
+</code></pre></TD></TR></TABLE>
+
+<div class=topich>
+<h5 class=topich>Description</h5><p>
+
+This function sets the driver type for a CAN controller. This
+corresponds loosely to the bus output control register in the CAN
+controller, hence the name of this function. CANLIB32 does not allow
+for direct manipulation of the bus output control register; instead,
+symbolic constants are used to select the desired driver type.
+
+</div>
+
+<div class=topich>
+<h5 class=topich>Input Parameters</h5><p>
+<dl>
+<dt><i>handle</i></dt>
+<dd>A handle to an open circuit.</dd>
+</dl>
+
+<dl><dt><i>drivertype</i></dt>
+<dd>Any one of the following values:
+<table>
+<tr><th>Value</th><th>Meaning</th></tr>
+<TR>
+<TD>canDRIVER_NORMAL</TD>
+<TD>The "normal" driver type (push-pull). This is the default.</TD>
+</TR>
+<TR>
+<TD>canDRIVER_SILENT</TD>
+<TD>Sets the CAN controller in Silent Mode; that is, it doesn't
+send anything, not even ACK bits, on the bus. Reception works as usual.</TD>
+</TR>
+</TABLE>
+</dd></dt></dl>
+
+</div>
+
+<div class=topich>
+<h5 class=topich>Output Parameters</h5><p>
+None.
+</div>
+
+
+<div class=topich>
+<h5 class=topich>Return Value</h5><p>
+<A HREF="errcodes.htm">canOK</A> (zero) if success<BR>
+<A HREF="errcodes.htm">canERR_xxx</A> (negative) if failure.<BR>
+</div>
+
+<div class=note>
+<h5 class=note><B>Notes</B></h5><p>
+Don't confuse the CAN controller driver type with the bus driver
+type. The CAN controller is not connected directly to the CAN bus;
+instead, it is connected to a bus transceiver circuit which
+interfaces directly to the bus. The "CAN controller driver type" we
+are talking about here refers to the mode which the CAN controller
+uses to drive the bus transceiver circuit. CANLIB supports two
+different modes:<p>
+<ul>
+<li><b>Normal mode</b>, which is.. well.. the normal mode.</li>
+<li><b>Silent mode</b>, where the CAN controller does not send anything on the bus, not even
+ACK bits. Reception, however, works as usual.</li>
+</ul>
+<p>
+<b>Note</b> that Silent Mode is not supported by all CAN controllers.
+
+<div class=relh>
+<h5 class=relh><B>Related Topics</B></h5><p>
+<a href="canGetBusOutputControl.htm">canGetBusOutputControl</a>
+</div>
+
+</BODY>
+</HTML>

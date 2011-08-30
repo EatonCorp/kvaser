@@ -1,0 +1,107 @@
+<!doctype html public "-//w3c//dtd html 4.0 transitional//en">
+<HTML>
+<HEAD>
+    <META HTTP-EQUIV="Content-Type" Content="text/html; charset=iso-8859-1">
+    <title>canGetBusParams</title>
+    <link rel="stylesheet" type="text/css" href="canlib.css">
+</HEAD>
+
+<BODY>
+<img SRC="tux.png" ALT="linux" NOSAVE height=39 width=92 align=RIGHT>
+<h3>canGetBusParams</h3><p>
+
+<h5 class=topich>Syntax</h5><p>
+<table width="100%"><TR><TD><pre><code>
+#include &lt;canlib.h&gt;
+canStatus <b>canGetBusParams</b>(
+   int handle, 
+   long* freq, 
+   unsigned int* tseg1,
+   unsigned int* tseg2, 
+   unsigned int* sjw, 
+   unsigned int* noSamp, 
+   unsigned int* syncmode
+);
+</code></pre></TD></TR></TABLE>
+
+<div class=topich>
+<h5 class=topich>Description</h5><p>
+This function retrieves the current bus parameters for the specified channel.
+</div>
+
+<div class=topich>
+<h5 class=topich>Input Parameters</h5><p>
+<dl>
+<dt><i>
+handle
+</i></dt>
+<dd>An open handle to a CAN controller.</dd>
+</dl>
+</div>
+
+<div class=topich>
+<h5 class=topich>Output Parameters</h5><p>
+<dl>
+<dt><i>
+freq
+</i></dt>
+<dd>Bit rate (bits per second).</dd>
+</dl>
+
+<dl>
+<dt><i>
+tseg1
+</i></dt>
+<dd>Time segment 1, that is, the number of quanta
+from (but not including) the Sync Segment to the sampling point.</dd>
+</dl>
+
+<dl>
+<dt><i>
+tseg2
+</i></dt>
+<dd>Time segment 2, that is, the number of quanta 
+from the sampling point to the end of the bit.</dd>
+</dl>
+
+<dl>
+<dt><i>
+sjw
+</i></dt>
+<dd>The Syncronization Jump Width; can be 1,2,3, or 4.</dd>
+
+</dl>
+<dl>
+<dt><i>
+noSamp
+</i></dt>
+<dd>The number of sampling points; can be 1 or 3.</dd>
+</dl>
+
+<dl>
+<dt><i>
+syncmode
+</i></dt>
+<dd>Unsupported, always read as zero.</dd>
+</dl>
+
+</div>
+
+
+<div class=topich>
+<h5 class=topich>Return Value</h5><p>
+<A HREF="errcodes.htm">canOK</A> (zero) if success<BR>
+<A HREF="errcodes.htm">canERR_xxx</A> (negative) if failure.<BR>
+</div>
+
+<div class=relh>
+<h5 class=relh><B>Related Topics</B></h5><p>
+<A HREF="canSetBusParams.htm">canSetBusParams</A>
+<p>
+The anatomy of a CAN bit is discussed in detail at Kvaser's web site
+at <A HREF="http://www.kvaser.com">http://www.kvaser.com</A>.
+<p><A HREF="bitrate_examples.htm">Here are some examples of bitrate settings.</A><BR>
+</div>
+
+</BODY>
+</HTML>

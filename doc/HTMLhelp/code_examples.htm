@@ -1,0 +1,266 @@
+<!doctype html public "-//w3c//dtd html 4.0 transitional//en">
+<HTML>
+<HEAD>
+    <META HTTP-EQUIV="Content-Type" Content="text/html; charset=iso-8859-1">
+    <title>Code Examples</title>
+    <link rel="stylesheet" type="text/css" href="canlib.css">
+</HEAD>
+
+<BODY>
+<img SRC="tux.png" ALT="linux" NOSAVE height=39 width=92 align=RIGHT>
+<h3 class=topich>Code Examples</h3><p>
+
+
+<h5><a name="#canAccept">canAccept Example</a></h5><p>
+
+To set the mask to 0xF0 and the code to 0x60:<p>
+
+<code><pre>
+    stat = canAccept(handle1, 0x0F0L, canFILTER_SET_MASK_STD);
+    if (stat &lt; 0) printf("canAccept failed, stat = %d\n", stat);
+    stat = canAccept(handle1, 0x060L, canFILTER_SET_CODE_STD);
+    if (stat &lt; 0) printf("canAccept failed, stat = %d\n", stat);
+</code></pre>
+
+<h5>Result</h5>
+
+Those messages having a standard identifier with bit7-bit4 in the
+identifier equal to 0110 (binary) will pass through. Other messages
+with standard identifiers will be rejected.
+
+<hr>
+<h5><a name="#canBusOff">canBusOff Example</a></h5><p>
+
+This example takes an open channel off-bus and then takes it on-bus
+again, for what purpose it may serve.<p>
+
+
+<code><pre>
+    int stat;
+    int handle;
+
+    .
+    .
+    .
+    stat = canBusOff(handle);
+    if (stat &lt; 0) {
+        printf("canBusOff failed, status=%d\n", stat);
+        exit(1);
+    } 
+
+    stat = canBusOn(handle);
+    if (stat &lt; 0) {
+        printf("canBusOn failed, status=%d\n", stat);
+        exit(1);
+    } 
+</code></pre>
+
+
+<hr>
+<h5><a name="#canBusOn">canBusOn Example</a></h5><p>
+
+This example opens a channel (see canOpen), sets the bit rate to 125
+kbit/s using default bit timing parameters, and goes on bus.
+
+<code><pre>
+    int stat;
+    int handle;
+
+    .
+    .
+    .
+    handle = canOpen(&amp;hw, NULL,0);
+
+    stat = canSetBusParams(handle, BAUD_125K, 0, 0, 0, 0, 0);
+    if (stat &lt; 0) {
+        printf("canBusParams failed, status=%d\n", stat);
+        exit(1);
+    }
+
+    stat = canBusOn(handle);
+    if (stat &lt; 0) {
+        printf("canBusOn failed, status=%d\n", stat);
+        exit(1);
+    } 
+</code></pre>
+
+<hr>
+<h5><a name="#canClose">canClose Example</a></h5><p>
+
+This example closes the specified handle.<p>
+<code><pre>
+     int stat = canClose(hnd);   
+     if (stat &lt; 0) { 
+         printf("Close failed."); 
+     }  
+</code></pre>
+
+
+<hr>
+<h5><a name="#canGetErrorText">canGetErrorText Example</a></h5><p>
+
+
+Here's a procedure that prints an error message when the passed status code means faílure.
+
+<code><pre>
+void Check(canStatus stat)
+{
+    char buf[100];
+    if (stat != canOK) {
+        buf[0] = '\0';
+        canGetErrorText(stat, buf, sizeof(buf));
+        printf("Failed, stat=%d (%s)\n", (int)stat, buf);
+        exit(1);
+    }
+} 
+</code></pre>
+
+<hr>
+<h5><a name="#canOpenChannel">canOpenChannel Example</a></h5><p>
+
+This example opens channel 0 for exclusive usage by this application.
+
+<code><pre>
+    int hnd;
+    hnd = canOpenChannel(0, canWANT_EXCLUSIVE);
+    if (hnd &lt; 0) {  
+        printf("Open failed, stat=%d\n", hnd);   
+    }
+</code></pre>
+
+<hr>
+<h5><a name="#canRead">canRead Example</a></h5><p>
+
+The following code fragment reads the next available CAN message, if any.
+
+<code><pre>
+    int handle;
+    long id;
+    char data[8];
+    unsigned int dlc, flags;
+    unsigned long timestamp;
+
+    stat = canRead(handle, &amp;id, data, &amp;dlc, &amp;flags, &amp;timestamp);
+    if (stat != canERR_NOMSG) {
+        printf("Failed, status == %d\n", stat);
+    }
+</code></pre>
+
+
+<hr>
+<h5><a name="#canSetBusParams">canSetBusParams Example</a></h5><p>
+
+This example opens a channel (see canOpen), sets the bit rate to 125 kbit/s using default bit timing parameters, and goes on bus.
+
+<code><pre>
+    int stat;
+    int handle;
+
+    .
+    .
+    .
+    handle = canOpen(&amp;hw, NULL, 0);
+
+    stat = canSetBusParams(handle, BAUD_125K, 0, 0, 0, 0, 0);
+    if (stat &lt; 0) {
+        printf("canSetBusParams failed, status=%d\n", stat);
+        exit(1);
+    }
+
+    stat = canBusOn(handle);
+    if (stat &lt; 0) {
+        printf("canBusOn failed, status=%d\n", stat);
+
+exit(1);
+    } 
+</code></pre>
+
+If we had used this call instead:
+
+<code><pre>
+    stat = canSetBusParams(handle, 125000, 4, 3, 1, 1, 0);
+</code></pre>
+
+the result would have been:<br>
+    125 kbit/s, each bit comprising 8 (= 1 + 4 + 3) quanta,
+ the sampling point occurs at 5/8 of a bit; SJW = 1; 
+one sampling point.
+
+<hr>
+<h5><a name="#canSetNotify">canSetNotify Example</a></h5><p>
+
+<code><pre>
+void callback (canNotifyData *nd)
+{
+  printf("Notify, tag = %p\n", nd -> tag);
+  switch (nd -> eventType) {
+  case canEVENT_STATUS:
+    printf("canEVENT_STATUS\n");
+    printf("busStatus: %d\n", nd -> info.status.busStatus);
+    printf("TXerror  : %d\n", nd -> info.status.txErrorCounter);
+    printf("RXerror  : %d\n", nd -> info.status.txErrorCounter);
+    printf("Time     : %ld\n", nd -> info.status.time);
+    break;
+  case canEVENT_ERROR:
+    printf("canEVENT_ERROR\n");
+    break;
+  case canEVENT_TX:
+    printf("canEVENT_TX\n");    
+    break;
+  case canEVENT_RX:
+    printf("canEVENT_RX\n");
+    break;
+  }
+  return;
+}
+
+
+canHnd = canOpen(....);
+...
+stat = canSetNotify(canHnd, callback, canNOTIFY_STATUS | canNOTIFY_ERROR, &canHnd);
+</code></pre>
+
+The functon 'callback' will be called when the status change 
+or an errorframe occurs on the bus.<br>
+The tag field in canNotifyData is a void pointer. This can be used as a reference to 
+some data associated with a specific channel/handle.
+
+
+<hr>
+
+
+<h5><a name="#canWrite">canWrite Example</a></h5><p>
+
+The following code fragment sends a CAN message on an already open channel.
+The CAN message will have identifier 1234 (extended) and DLC = 8. The contents
+of the data bytes will be whatever the <i>data</i> array happens to contain.
+
+<code><pre>
+    int handle, stat;
+    char data[8];
+
+    stat = canWrite(handle, 1234, data, 8, canMSG_EXT);
+    if (stat &lt; 0) {
+        printf("Failed, status == %d\n", stat);
+    }
+</code></pre>
+<hr>
+
+
+
+
+</BODY>
+</HTML>
+
+
+
+
+
+
+
+
+
+
+
+
+

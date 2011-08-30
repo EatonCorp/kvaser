@@ -1,0 +1,102 @@
+<!doctype html public "-//w3c//dtd html 4.0 transitional//en">
+<HTML>
+<HEAD>
+    <META HTTP-EQUIV="Content-Type" Content="text/html; charset=iso-8859-1">
+    <title>canRead</title>
+    <link rel="stylesheet" type="text/css" href="canlib.css">
+</HEAD>
+
+<BODY>
+<img SRC="tux.png" ALT="linux" NOSAVE height=39 width=92 align=RIGHT>
+<h3>canRead</h3><p>
+
+<h5 class=topich>Syntax</h5><p>
+<table width="100%"><TR><TD><pre><code>
+#include &lt;canlib.h&gt;
+canStatus <b>canRead</b>(
+    int handle, long* id, 
+    void* msg, unsigned int* dlc, 
+    unsigned int* flag, DWORD* time);
+</code></pre></TD></TR></TABLE>
+
+<div class=topich>
+<h5 class=topich>Description</h5><p>
+Reads a message from the receive buffer. If no message is available,
+the function returns immediately with return code canERR_NOMSG.
+</div>
+
+<div class=topich>
+<h5 class=topich>Input Parameters</h5><p>
+<dl>
+<dt><i>
+handle
+</i></dt>
+<dd>A handle to an open circuit.<dd>
+</dl>
+</div>
+
+<div class=topich>
+<h5 class=topich>Input/Output Parameters</h5><p>
+<dl>
+<dt><i>id</i></dt>
+<dd>Pointer to a buffer which receives the CAN identifier.
+This buffer will only get the identifier. To determine whether
+this identifier was standard (11-bit) or extended (29-bit),
+and/or whether is was remote or not, examine the contents of
+the flag argument.
+</dd>
+</dl>
+
+<dl>
+<dt><i>msg</i></dt>
+<dd>Pointer to the buffer which receives the message data. This buffer
+must be large enough (i.e. 8 bytes.) Only the message data is copied;
+the rest of the buffer is left as-is.</dd>
+</dl>
+
+<dl>
+<dt><i>dlc</i></dt>
+<dd>Pointer to a buffer which receives the message length.</dd>
+</dl>
+
+<dl>
+<dt><i>flag</i></dt>
+<dd>Pointer to a buffer which receives the 
+<A HREF="message_flags.htm">message flags</A>,
+which is a combination of the canMSG_xxx and canMSGERR_xxx values.
+</dd>
+</dl>
+
+<dl>
+<dt><i>time</i></dt>
+<dd>Pointer to a buffer which receives the 
+<A HREF="time_stamp.htm">message time stamp.</A>
+</dd>
+</dl>
+
+</div>
+
+<div class=topich>
+<h5 class=topich>Return Value</h5><p>
+<A HREF="errcodes.htm">canOK</A> (zero) if a message was read.<BR>
+<A HREF="errcodes.htm">canERR_NOMSG</A> (negative) if there was no message available.<BR>
+<A HREF="errcodes.htm">canERR_xxx</A> (negative) if failure.<BR>
+</div>
+
+<div class=note>
+<h5 class=note><B>Notes</B></h5>
+<ul>
+<li>It is allowed to pass NULL as the value of id, msg, dlc, flags, and time.
+</li>
+</ul>
+</div>
+
+<div class=relh>
+<h5 class=relh><B>Related Topics</B></h5><p>
+<A HREF="canReadWait.htm">canReadWait</A>
+<p>
+<A HREF="code_examples.htm#canRead">An example.</a>
+</div>
+
+</BODY>
+</HTML>

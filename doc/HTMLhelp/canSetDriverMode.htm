@@ -1,0 +1,75 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<HTML>
+<HEAD>
+    <META HTTP-EQUIV="Content-Type" Content="text/html; charset=Windows-1252">
+    <title>canSetDriverMode</title>
+    <link rel="stylesheet" type="text/css" href="canlib.css">
+</HEAD>
+
+<BODY>
+
+<h3>canSetDriverMode</h3><p>
+
+<h5 class=topich>Syntax</h5><p>
+<table width="100%"><TR><TD><pre><code>
+#include &lt;canlib.h&gt;
+canStatus <b>canSetDriverMode</b>(
+   const int hnd,
+   int lineMode, 
+   int resNet);
+);
+</code></pre></TD></TR></TABLE>
+
+<div class=topich>
+<h5 class=topich>Description</h5><p>
+<font color="#FF0000">NOTE: This function is currently not supported.</font><p>
+This function sets the current CAN bus driver mode. 
+</div>
+
+<div class=topich>
+<h5 class=topich>Parameters</h5><p>
+<dl>
+<dt><i>
+hnd
+</i></dt>
+<dd>An open handle to a CAN circuit.<dd>
+</dl>
+
+<dl>
+<dt><i>
+lineMode
+</i></dt>
+<dd>An unsigned int which defines the line mode.
+</dl>
+
+<dl>
+<dt><i>
+resNet
+</i></dt>
+<dd>An unsigned int which defines the resnet mode.
+</dl>
+
+</div>
+
+
+<div class=topich>
+<h5 class=topich>Return Value</h5><p>
+<A HREF="errcodes.htm">canOK</A> (zero) if success<BR>
+<A HREF="errcodes.htm">canERR_xxx</A> (negative) if failure.<BR>
+</div>
+
+
+<div class=note>
+<h5 class=note><B>Notes</B></h5><p>
+The bus driver mode is typically used to control things like
+one- or two-wire mode, sleep mode, and so on. It requires special
+support in the CAN driver circuit.
+</div>
+
+<div class=relh>
+<h5 class=relh><B>Related Topics</B></h5><p>
+<a href="canSetDriverMode.htm">canSetDriverMode</a>
+</div>
+
+</BODY>
+</HTML>

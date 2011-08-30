@@ -1,0 +1,162 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<HTML>
+<HEAD>
+    <META HTTP-EQUIV="Content-Type" Content="text/html; charset=iso-8859-1">
+    <title>Error Codes</title>
+    <link rel="stylesheet" type="text/css" href="canlib.css">
+</HEAD>
+
+<BODY>
+p
+<img SRC="tux.png" ALT="linux" NOSAVE height=39 width=92 align=RIGHT>
+
+<h3>Error Codes</h3>
+
+<p>
+Generally, a return code greater than or equal to zero means
+success. A value less than zero means failure. 
+<p>
+The error codes are defined in <b>canstat.h</b>.
+<p>
+
+
+<table width="100%">
+<tr><th>Code</th><th>Value</th><th>Meaning</th></tr>
+<tr><td>canOK</td><th>0</th>
+<td>"Normal successful completion."<br>
+        The driver is just fine, and really believes it carried out your
+        command to everyone's satisfaction.
+</td></tr>
+
+<tr><td>canERR_PARAM</td><th>-1</th>
+<td>"Error in parameter."<br>
+Error in one or more parameters; a parameter specified in 
+the call was invalid, out of range, or so.
+This status code will also be returned when the call is not implemented.
+</td></tr>
+
+<tr><td>canERR_NOMSG</td><th>-2</th>
+<td>"There were no messages to read."<br>
+A function tried to read a message, but there was
+no message to read.
+</td></tr>
+
+<tr><td>canERR_NOTFOUND</td><th>-3</th>
+<td>"Specified device or channel not found."<br>
+There is no hardware available that matches the given search
+criteria. For example, you may have specified canWANT_EXTENDED
+but there's no controller capable of extended CAN. You may have
+specified a channel number that is out of the range for the 
+hardware in question. You may have requested exclusive access to
+a channel, but the channel is already occupied.
+</td></tr>
+
+<tr><td>canERR_NOMEM</td><th>-4</th>
+<td>"Out of memory."<br>
+        A memory allocation failed.
+</td></tr>
+
+<tr><td>canERR_NOCHANNELS</td><th>-5</th>
+<td>"No channels avaliable."<br>
+        There is indeed hardware matching the criteria you specified, 
+        but there are no channels available, or the channel you specified
+        is already occupied.
+</td></tr>
+
+<tr><td>canERR_INTERRUPTED</td><th>-5</th>
+<td>"The call was interrrupted by a signal"<br>
+A signal e.g. the user pressed CTRL-C, interrupted a waiting canlib call.
+
+</td></tr>
+
+<tr><td>canERR_TIMEOUT</td><th>-7</th>
+<td>"Timeout ocurred."<br>
+A function waited for something to happen (for example,
+the arrival of a message), but that something didn't happen.
+</td></tr>
+
+<tr><td>canERR_NOTINITIALIZED</td><th>-8</th>
+<td>"The library is not initialized."<br>
+        The driver is not initialized. canInitializeLibrary() was probably
+        not called?
+</td></tr>
+
+<tr><td>canERR_NOHANDLES</td><th>-9</th>
+<td>"Out of handles."<br>
+No handles are available inside canlib32. The application has too
+many handles open (i.e. has called canOpenChannel too many times, or
+there's a memory leak somewhere.) Note that we are not talking
+about Windows handles here, it's CANLIB's own internal handles.
+</td></tr>
+
+<tr><td>canERR_INVHANDLE</td><th>-10</th>
+<td>"Handle is invalid."<br>
+        The CANLIB handle you specified (if the API call includes a handle)
+        is not valid.
+</td></tr>
+
+<tr><td>canERR_DRIVER</td><th>-12</th>
+<td>CAN driver mode is not supported by the present hardware.</td></tr>
+
+<tr><td>canERR_TXBUFOFL</td><th>-13</th>
+<td>"Transmit buffer overflow."<br>
+    The transmit queue was full, so the message was dropped.
+</td></tr>
+
+<tr><td>canERR_HARDWARE</td><th>-15</th>
+<td>"A hardware error has occurred."<br>
+        Something probably related to the hardware happened. This could
+        mean that the device does not respond (IRQ or address conflict?),
+        or that the response was invalid or unexpected (faulty card?)
+</td></tr>
+
+<tr><td>canERR_DYNALOAD</td><th>-16</th>
+<td>"A driver DLL can't be found or loaded."<br>
+        (One of) the DLL(s) specified in the registry failed to load.
+</td></tr>
+
+<tr><td>canERR_DYNALIB</td><th>-17</th>
+<td>"A DLL seems to have wrong version."<br>
+        DLL version mismatch. (One of) the DLL(s) specified in the 
+        registry is - probably - too old, or - less likely - too new.
+</td></tr>
+
+<tr><td>canERR_DYNAINIT</td><th>-18</th>
+<td>"Error when initializing a DLL."<br>
+        Something failed when a device driver was being initialized.
+        In other words, we can open the driver but it makes a lot
+        of fuss about something we don't understand.
+</td></tr>
+
+<tr><td>canERR_DRIVERLOAD</td><th>-23</th>
+<td>"Can't find or load kernel driver."<br>
+        A device driver (kernel mode driver for NT, VxD for W95/98)
+        failed to load; or the DLL could not open the device.
+        Privilegies? Driver file missing?
+</td></tr>
+
+<tr><td>canERR_DRIVERFAILED</td><th>-24</th>
+<td>DeviceIOControl failed; use Win32 GetLastError() to know what really happened.</td></tr>
+
+<tr><td>canERR_REGISTRY</td><th>-28</th>
+<td>"Error (missing data) in the Registry."<BR>
+        A registry key is missing, invalid, malformed, has gone for lunch
+        or what not. can_verify.exe might provide some insight.
+</td></tr>
+
+<tr><td>canERR_LICENSE</td><th>-29</th>
+<td>The license is not valid.</td></tr>
+
+<tr><td>canERR_INTERNAL</td><th>-30</th>
+<td>"Internal error in the driver."<br>
+        Indicates an error condition in the driver or DLL which couldn't
+        be properly handled. Please contact the friendly support at
+        staff@kvaser.se.
+</td></tr>
+
+</table>
+
+
+
+</BODY>
+</HTML>

@@ -1,0 +1,56 @@
+<!doctype html public "-//w3c//dtd html 4.0 transitional//en">
+<HTML>
+<HEAD>
+    <META HTTP-EQUIV="Content-Type" Content="text/html; charset=iso-8859-1">
+    <title>CAN Circuit Specific Notes</title>
+    <link rel="stylesheet" type="text/css" href="canlib.css">
+</HEAD>
+
+<BODY>
+<img SRC="tux.png" ALT="linux" NOSAVE height=39 width=92 align=RIGHT>
+<h5 class=topich>CAN Circuit Specific Notes</h5><p>
+
+<h5 class=subh>Philips 82C200</h5><p>
+This circuit is present on the four-channel PCcan boards manufactured before October 1998.
+It can't do extended CAN (29-bit identifiers). <p>
+<ul>
+<li>CANLIB will not return an error code if you try to send an extended
+frame with this circuit.</li>
+</ul>
+<p>
+
+<h5 class=subh>Philips SJA1000</h5><p>
+This circuit is present on the PCcan-S, PCcan-D, PCcan-F boards,
+and on the PCcan-Q boards manufactured after October 1998. (It's also
+used in the LAPcan.)
+<ul>
+<li>When an error flag (frame) is detected, CANLIB will report the
+error syndrome from the sja1000 (the contents of the ECC register)
+in the identifier, offsetted by 0x800.
+</li>
+</ul>
+
+<h5 class=subh>Intel 82527</h5><p>
+This circuit is present on the PCcan-Q boards.
+<ul>
+<li>
+This circuit has problems with remote frames. When a remote frame is received,
+CANLIB will always report the identifier as 0x7FFFFFFF and the DLC as 0.
+</li>
+<li>
+The 82527 has just one double-buffered buffer and this buffer can receive
+standard OR extended frames, but not both. The other type must go into
+a single-buffered buffer. The type received in the single-buffered buffer
+is more prone to overruns. You can control the behaviour in the Registry:
+set the REG_DWORD entry
+<tt>HKLM\Software\VECTOR\CANDriver 1.0\Options\PCcanOptimizeForExtended_?</tt>
+ (where "?" is 0 or 1 depending on which
+82527 you want to control) to 0 (for favourizing standard frames) or 1 
+(to optimize for extended CAN).
+</li>
+</ul>
+
+
+
+</BODY>
+</HTML>

@@ -1,0 +1,109 @@
+<!doctype html public "-//w3c//dtd html 4.0 transitional//en">
+<HTML>
+<HEAD>
+    <META HTTP-EQUIV="Content-Type" Content="text/html; charset=iso-8859-1">
+    <title>canSetBusParams</title>
+    <link rel="stylesheet" type="text/css" href="canlib.css">
+</HEAD>
+
+<BODY>
+<img SRC="tux.png" ALT="linux" NOSAVE height=39 width=92 align=RIGHT>
+<h3>canSetBusParams</h3><p>
+
+<h5 class=topich>Syntax</h5><p>
+<table width="100%"><TR><TD><pre><code>
+#include &lt;canlib.h&gt;
+canStatus <b>canSetBusParams</b>(int handle, 
+    long freq, 
+    unsigned int tseg1,
+    unsigned int tseg2, 
+    unsigned int sjw, 
+    unsigned int noSamp,
+    unsigned int syncmode);
+</code></pre></TD></TR></TABLE>
+
+<div class=topich>
+<h5 class=topich>Description</h5><p>
+This function sets the bus timing parameters for the specified CAN controller.
+</div>
+
+<div class=topich>
+<h5 class=topich>Input Parameters</h5><p>
+<dl>
+<dt><i>handle</i></dt>
+<dd>An open handle to a CAN controller.</dd>
+</dl>
+</div>
+
+<dl>
+<dt><i>freq</i></dt>
+<dd>Bit rate (measured in bits per second); or one of the predefined
+constants BAUD_xxx, which are described below.</dd>
+</dl>
+
+<dl>
+<dt><i>tseg1</i></dt>
+<dd>Time segment 1, that is, the number of quanta
+from (but not including) the Sync Segment to the sampling point.</dd>
+</dl>
+
+<dl>
+<dt><i>tseg2</i></dt>
+<dd>Time segment 2, that is, the number of quanta 
+from the sampling point to the end of the bit.</dd>
+</dl>
+
+<dl>
+<dt><i>sjw</i></dt>
+<dd>The Syncronization Jump Width; can be 1,2,3, or 4.</dd>
+
+</dl>
+<dl>
+<dt><i>noSamp</i></dt>
+<dd>The number of sampling points; can be 1 or 3.</dd>
+</dl>
+
+<dl>
+<dt><i>syncmode</i></dt>
+<dd>Unsupported and ignored.</dd>
+</dl>
+
+</div>
+
+<div class=topich>
+<h5 class=topich>Output Parameters</h5><p>
+None.
+</div>
+
+
+<div class=topich>
+<h5 class=topich>Return Value</h5><p>
+<A HREF="errcodes.htm">canOK</A> (zero) if success<BR>
+<A HREF="errcodes.htm">canERR_xxx</A> (negative) if failure.<BR>
+</div>
+
+<div class=topich>
+<h5 class=topich>Default Values</h5><p>
+
+The library provides default values for <i>tseg1</i>, <i>tseg2</i>, <i>sjw</i> 
+and <i>noSamp</i> 
+when <i>freq</i> is specified to one of the following pre-defined constants:
+<p>
+<table>
+<tr><th>Constant</th><th>Meaning</th></tr>
+<tr><td>BAUD_1M</td><td>1 Mbit/s</td>
+<tr><td>BAUD_500K</td><td>500 kbit/s</td>
+<tr><td>BAUD_250K</td><td>250 kbit/s</td>
+<tr><td>BAUD_125K</td><td>125 kbit/s</td>
+<tr><td>BAUD_100K</td><td>100 kbit/s</td>
+<tr><td>BAUD_62K</td><td>62.5 kbit/s</td>
+<tr><td>BAUD_50K</td><td>50 kbit/s</td>
+</table>
+<p>If <i>freq</i> is any other value, no default values are supplied by the library.
+
+</div>
+
+
+</BODY>
+</HTML>
+

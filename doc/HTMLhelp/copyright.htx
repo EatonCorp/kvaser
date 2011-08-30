@@ -1,0 +1,251 @@
+<HTML>
+<HEAD>
+    <META HTTP-EQUIV="Content-Type" Content="text/html; charset=Windows-1252">
+    <link rel="stylesheet" type="text/css" href="canlib.css">
+   <TITLE>License and Copyright</TITLE>
+</HEAD>
+<BODY>
+<h1>Copyright</h1>
+
+<pre>
+Software Product: $$PRODNAME$$ $$PRODVER$$
+
+
+KVASER SOFTWARE LICENSE STATEMENT AND LIMITED WARRANTY
+======================================================
+
+IMPORTANT - READ CAREFULLY
+This license statement and limited warranty constitutes a legal
+agreement ("License Agreement") between you (either as an individual
+or a single entity) and KVASER AB, Kinnahult, Sweden, ("KVASER") for
+the software product ("Software") identified above, including any
+software, media, and accompanying on-line or printed documentation.
+
+BY INSTALLING, COPYING, OR OTHERWISE USING THE SOFTWARE, YOU AGREE TO
+BE BOUND BY ALL OF THE TERMS AND CONDITIONS OF THE LICENSE AGREEMENT.
+If you are the original purchaser of the Software and you do not
+agree with the terms and conditions of the License Agreement,
+promptly return the unused Software to the place from which you
+obtained it for a full refund.
+
+Upon your acceptance of the terms and conditions of the License
+Agreement, KVASER grants you the right to use the Software in the
+manner provided below.
+
+This Software is owned by KVASER or its suppliers and is protected by
+copyright law and international copyright treaty.  Therefore, you
+must treat this Software like any other copyrighted material (e.g., a
+book), except that you may either make copies of the Software solely
+for backup or archival purposes or transfer the Software to a
+computer readable medium, e.g. a hard disk, provided you keep the
+original solely for backup or archival purposes.
+
+You may transfer the Software and documentation on a permanent basis
+provided you retain no copies and the recipient agrees to the terms
+of the License Agreement.  Except as provided in the License
+Agreement, you may not transfer, rent, lease, lend, copy, modify,
+translate, sublicense, time-share or electronically transmit or
+receive the Software, media or documentation.  You acknowledge that
+the Software in source code form remains a confidential trade secret
+of KVASER and/or its suppliers and therefore you agree not to modify
+the Software or attempt to reverse engineer, decompile, or
+disassemble the Software, except and only to the extent that such
+activity is expressly permitted by applicable law notwithstanding
+this limitation.
+
+If you have purchased an upgrade version of the Software, it
+constitutes a single product with the KVASER software that you
+upgraded.  You may use or transfer the upgrade version of the
+Software only in accordance with the License Agreement.
+
+
+GENERAL TERMS THAT APPLY TO COMPILED PROGRAMS AND REDISTRIBUTABLES
+You may write and compile (including byte-code compile) your own
+application programs using the Software, including any libraries and
+source code included for such purpose with the Software. You may
+reproduce and distribute, in executable form only, programs which you
+create using the Software without additional license or fees, subject
+to all of the conditions in this statement.
+
+KVASER products may include certain files ("Redistributables")
+intended for distribution by you to the users of programs you create.
+Redistributables include, for example, those files identified in the
+accompanying printed or on-line documentation as redistributable
+files.  In any event, the Redistributables for the Software are only
+those files specifically designated as such by KVASER.  From time to
+time, KVASER may designate other files as Redistributables.  You
+should refer to the documentation, including any "readme" or "deploy"
+files included with the Software, for additional information.
+
+Subject to all of the conditions in this statement, you may reproduce
+and distribute exact copies of the Redistributables, provided that
+such copies are made from the original copy of the Software or the
+copy transferred to the hard disk, or obtained from KVASER's web
+site, http://www.kvaser.com.  Copies of Redistributables may only be
+distributed with and for the sole purpose of executing application
+programs permitted under this statement that you have created using
+the Software.  Under no circumstances may any copies of
+Redistributables be distributed separately.  Regardless of any
+modifications which you make and regardless of how you might compile,
+link, and/or package your programs, under no circumstances may the
+libraries (including runtime libraries), code, Redistributables,
+and/or other files of the Software (including any portions thereof)
+be used for developing programs by anyone other than you.  Only you
+as the licensed user (or the Named User for your entity) have the
+right to use the libraries (including runtime libraries), code,
+Redistributables, or other files of the Software (or any portions
+thereof) for developing programs created with the Software.  In
+particular, you may not share copies of the Redistributables with
+other co-developers.  You may not reproduce or distribute any KVASER
+documentation without KVASER's permission.
+
+The license granted in this statement for you to create your own
+compiled programs and distribute your programs and the
+Redistributables (if any) is subject to all of the following
+conditions: (i) all copies of the programs you create must bear a
+valid copyright notice, either your own or the KVASER copyright
+notice that appears on the Software; (ii) you may not remove or alter
+any KVASER copyright, trademark or other proprietary rights notice
+contained in any portion of KVASER libraries, source code,
+Redistributables or other files that bear such a notice; (iii) KVASER
+provides no warranty at all to any person, other than the Limited
+Warranty provided to the original purchaser of the Software, and you
+will remain solely responsible to anyone receiving your programs for
+support, service, upgrades, or technical or other assistance, and
+such recipients will have no right to contact KVASER for such
+services or assistance; (iv) you will indemnify and hold KVASER, its
+related companies and its suppliers, harmless from and against any
+claims or liabilities arising out of the use, reproduction or
+distribution of your programs; (v) your programs must be written
+using a licensed copy of the Software; (vi) your programs must add
+primary and substantial functionality, and may not be merely a set or
+subset of any of the libraries (including runtime libraries), code,
+Redistributables or other files of the Software; (vii) regardless of
+any modifications which you make and regardless of how you might
+compile, link, or package your programs, the libraries (including
+runtime libraries), code, Redistributables, and/or other files of the
+Software (including any portions thereof) may not be used in programs
+created by your end users (i.e., users of your programs) and may not
+be further redistributed by your end users; and (viii) you may not
+use KVASER's or any of its suppliers' names, logos, or trademarks to
+market your programs, except to state that your program was written
+using the Software.
+
+The Software might include source code, redistributable files, and/or
+other files provided by a third party vendor (Third Party Software).
+Since use of Third Party Software might be subject to license
+restrictions imposed by the third party vendor, you should refer to
+the on-line documentation (if any) provided with Third Party Software
+for any license restrictions imposed by the third party vendor.  In
+any event, any license restrictions imposed by a third party vendor
+are in addition to, not in lieu of, the terms and conditions of the
+License Agreement.
+
+All KVASER libraries, source code, Redistributables and other files
+remain KVASER's exclusive property. Regardless of any modifications
+that you make, you may not distribute any files (particularly KVASER
+source code and other non- executable files) except those that KVASER
+has expressly designated as Redistributables.  Nothing in the License
+Agreement permits you to derive the source code of files that KVASER
+has provided to you in executable form only, or to reproduce, modify,
+use, or distribute the source code of such files.  You are not, of
+course, restricted from distributing source code or byte code that is
+entirely your own.  Source code which you generate with a KVASER
+source code generator, such as Kingdom Founder, is considered by
+KVASER to be your code.
+
+Contact KVASER for the applicable royalties due and other licensing
+terms for all other uses and/or distribution of the Redistributables.
+
+
+LIMITED WARRANTY
+Except with respect to the Redistributables, which are provided "as
+is," without warranty of any kind, KVASER warrants that the Software,
+as updated and when properly used, will perform substantially in
+accordance with the accompanying documentation, and the Software
+media will be free from defects in materials and workmanship, for a
+period of ninety (90) days from the date of receipt.  Any implied
+warranties on the Software are limited to ninety (90) days.  Some
+states/jurisdictions do not allow limitations on duration of an
+implied warranty, so the above limitation may not apply to you.
+
+KVASER's and its suppliers' entire liability and your exclusive
+remedy shall be, at KVASER's option, either (a) return of the price
+paid, or (b) repair or replacement of the Software that does not meet
+KVASER's Limited Warranty and which is returned to KVASER with a copy
+of your receipt.  DO NOT RETURN ANY PRODUCT UNTIL YOU HAVE CALLED THE
+KVASER CUSTOMER SERVICE DEPARTMENT AND OBTAINED A RETURN
+AUTHORIZATION NUMBER.  This Limited Warranty is void if failure of
+the Software has resulted from accident, abuse, or misapplication.
+Any replacement Software will be warranted for the remainder of the
+original warranty period or thirty (30) days, whichever is longer.
+Neither these remedies nor any product support services offered by
+KVASER are available without proof of purchase from an authorized
+source.
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, KVASER AND ITS
+SUPPLIERS DISCLAIM ALL OTHER WARRANTIES AND CONDITIONS, EITHER
+EXPRESS OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, IMPLIED WARRANTIES
+OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND
+NON-INFRINGEMENT, WITH REGARD TO THE SOFTWARE, AND THE PROVISION OF
+OR FAILURE TO PROVIDE SUPPORT SERVICES. THIS LIMITED WARRANTY GIVES
+YOU SPECIFIC LEGAL RIGHTS. YOU MAY HAVE OTHERS, WHICH VARY FROM
+STATE/JURISDICTION TO STATE/JURISDICTION.
+
+LIMITATION OF LIABILITY TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE
+LAW, IN NO EVENT SHALL KVASER OR ITS SUPPLIERS BE LIABLE FOR ANY
+SPECIAL, INCIDENTAL, INDIRECT, OR CONSEQUENTIAL DAMAGES WHATSOEVER
+(INCLUDING, WITHOUT LIMITATION, DAMAGES FOR LOSS OF BUSINESS PROFITS,
+BUSINESS INTERRUPTION, LOSS OF BUSINESS INFORMATION, OR ANY OTHER
+PECUNIARY LOSS) ARISING OUT OF THE USE OF OR INABILITY TO USE THE
+SOFTWARE PRODUCT OR THE PROVISION OF OR FAILURE TO PROVIDE SUPPORT
+SERVICES, EVEN IF KVASER HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH
+DAMAGES. IN ANY CASE, KVASER'S ENTIRE LIABILITY UNDER ANY PROVISION
+OF THIS LICENSE AGREEMENT SHALL BE LIMITED TO THE AMOUNT ACTUALLY
+PAID BY YOU FOR THE SOFTWARE PRODUCT; PROVIDED, HOWEVER, IF YOU HAVE
+ENTERED INTO AN KVASER SUPPORT SERVICES AGREEMENT, KVASER'S ENTIRE
+LIABILITY REGARDING SUPPORT SERVICES SHALL BE GOVERNED BY THE TERMS
+OF THAT AGREEMENT. BECAUSE SOME STATES AND JURISDICTIONS DO NOT ALLOW
+THE EXCLUSION OR LIMITATION OF LIABILITY, THE ABOVE LIMITATION MAY
+NOT APPLY TO YOU.
+
+HIGH RISK ACTIVITIES
+The Software is not fault-tolerant and is not designed, manufactured
+or intended for use or resale as on-line control equipment in
+hazardous environments requiring fail- safe performance, such as in
+the operation of nuclear facilities, aircraft navigation or
+communication systems, air traffic control, direct life support
+machines, or weapons systems, in which the failure of the Software
+could lead directly to death, personal injury, or severe physical or
+environmental damage ("High Risk Activities"). KVASER and its
+suppliers specifically disclaim any express or implied warranty of
+fitness for High Risk Activities.
+
+
+PATENTS AND TRADEMARKS
+KVASER may have patents, patent applications, trademarks, copyrights,
+or other intellectual property rights covering subject matter in this
+Software. Except as expressly provided in any written license
+agreement from KVASER, the furnishing of this Software does not give
+you any license to these patents, trademarks, copyrights, or other
+intellectual property.
+
+
+GENERAL PROVISIONS
+This statement may only be modified in writing signed by you and an
+authorized officer of KVASER.  If any provision of this statement is
+found void or unenforceable, the remainder will remain valid and
+enforceable according to its terms.  If any remedy provided is
+determined to have failed for its essential purpose, all limitations
+of liability and exclusions of damages set forth in the Limited
+Warranty shall remain in effect.
+
+This statement shall be construed, interpreted and governed by the
+laws of Sweden.  This statement gives you specific legal rights;
+you may have others which vary from state to state and from country
+to country.  KVASER reserves all rights not specifically granted in
+this statement.
+
+</pre>
+</body>
+</html>

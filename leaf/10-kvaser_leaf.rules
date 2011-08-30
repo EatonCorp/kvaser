@@ -1,0 +1,7 @@
+# Load KVASER kernel modules for USB-modules
+
+# Leaf (id = 10-19, devel, light, pro, spro, pro_ls, pro_swc, spro_ls, spro_swc)
+SUBSYSTEM=="usb",ENV{PRODUCT}=="bfd/[a-f]/*",ACTION=="add",RUN+="/usr/sbin/leaf.sh start"
+SUBSYSTEM=="usb",ENV{PRODUCT}=="bfd/1[0-3]/*",ACTION=="add",RUN+="/usr/sbin/leaf.sh start"
+SUBSYSTEM=="usb",ENV{PRODUCT}=="bfd/[a-f]/*",ACTION=="remove",RUN+="/usr/sbin/leaf.sh stop"
+SUBSYSTEM=="usb",ENV{PRODUCT}=="bfd/1[0-3]/*",ACTION=="remove",RUN+="/usr/sbin/leaf.sh stop"
