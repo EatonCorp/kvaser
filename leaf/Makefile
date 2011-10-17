@@ -2,11 +2,14 @@ MODULE_NAME:=leaf
 
 PWD:=$(shell pwd)
 
+ifeq ($(KERNELRELEASE),)
 KBASE:=/lib/modules/$(shell uname -r)
+else
+KBASE:=/lib/modules/$(KERNELRELEASE)
+endif
 KDIR:=$(KBASE)/build
 KSOURCE:=$(KBASE)/source
 
-ifneq ($(KERNELRELEASE),)
 srcs:= \
   leafHWIf.c \
   ../common/objbuf.c \
@@ -15,7 +18,6 @@ srcs:= \
   ../common/VCanOsIf.c \
 
 objs:= $(patsubst %.c,%.o,$(srcs))
-
 
 obj-m:=$(MODULE_NAME).o
 $(MODULE_NAME)-y:=$(objs)
@@ -28,7 +30,6 @@ ccflags-y:= \
   -DWIN32=0 \
   -I$(src)/../include/ \
 
-else
 .PHONY: all
 all: leaf.ko
 
@@ -47,4 +48,3 @@ install: leaf.ko
 clean:
 	$(MAKE) -C $(KDIR) M=$(PWD) clean
 
-endif
